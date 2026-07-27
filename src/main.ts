@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, VBPluginSettingsTab, VBPluginSettings } from "./setti
 import { passPlugin, currentConfig, currentMedia, vlcStatusResponse, plObject, vlcRequestResponse } from "./vlcHelper";
 import { t } from "./language/helpers";
 import extensionList from "./extensionList";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import * as path from "path";
 const commandExistsSync = require("command-exists").sync;
 import { resolveMacOSVlcExecutable } from "./macVlcDetect";
@@ -841,7 +841,7 @@ export default class VLCBridgePlugin extends Plugin {
       .then(async (result: { canceled: boolean; filePaths: string[] }) => {
         if (!result.canceled && result.filePaths.length) {
           const file = result.filePaths[0];
-          const fileURI = new URL(file).href;
+          const fileURI = pathToFileURL(file).href;
           console.log(result, fileURI);
 
           this.openVideo({ mediaPath: fileURI });
