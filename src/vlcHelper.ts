@@ -449,7 +449,7 @@ export function passPlugin(plugin: VLCBridgePlugin) {
           } --player-path`
         : ""
     }`,
-    `${plugin.settings.commandPath == "vlcPath" && plugin.settings.vlcPath ? `"${plugin.settings.vlcPath}"` : plugin.cliExist || `"${plugin.settings.vlcPath}"`}`,
+    `${plugin.settings.commandPath == "vlcPath" && plugin.settings.vlcPath ? `"${plugin.settings.vlcPath}"` : plugin.cliExist ? `"${plugin.cliExist}"` : `"${plugin.settings.vlcPath}"`}`,
     `${type == "syncplay" ? "--" : ""}`,
     `--extraintf=luaintf:http`,
     `--http-port=${plugin.settings.port}`,
