@@ -6,6 +6,7 @@ import extensionList from "./extensionList";
 import { fileURLToPath } from "url";
 import * as path from "path";
 const commandExistsSync = require("command-exists").sync;
+import { resolveMacOSVlcExecutable } from "./macVlcDetect";
 import { getSubEntries, ISubEntry, msToTimestamp, supportedSubtitleFormats } from "./subtitleParser";
 import { IDialogEntry, ITranscriptViewState, TranscriptView, VIEW_TYPE_VB } from "./transcriptView";
 
@@ -30,7 +31,7 @@ export default class VLCBridgePlugin extends Plugin {
     dontBackCurrentPos?: boolean;
     onlyGetLength?: boolean;
   }) => Promise<{ length: number; currentPos?: number; currentPosAsMs?: number; status?: vlcStatusResponse } | undefined>;
-  cliExist: null | "vlc";
+  cliExist: null | string;
   spCliExist: null | "syncplay";
 
   async onload() {
@@ -52,6 +53,13 @@ export default class VLCBridgePlugin extends Plugin {
     // Check command-lines
     if (commandExistsSync("vlc")) {
       this.cliExist = "vlc";
+    } else if (Platform.isMacOS) {
+      // Obsidian's macOS GUI process often inherits a minimal PATH that doesn't
+      // include `vlc`, even when a standard VLC.app installation is present.
+      this.cliExist = resolveMacOSVlcExecutable();
+      if (!this.cliExist) {
+        this.settings.commandPath = "vlcPath";
+      }
     } else {
       this.settings.commandPath = "vlcPath";
     }

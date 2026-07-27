@@ -52,6 +52,7 @@ Or:
 > To use the plugin, 
 > - for Windows, you must first select `vlc.exe` in the plugin settings from the location where VLC Media Player is installed,
 > - for Linux and macOS, you must install the `vlc` command line on your system
+>   - on macOS, if a standard `/Applications/VLC.app` installation is present, it is detected automatically even when the `vlc` command isn't available on the app's PATH — no extra setup needed
 > 
 > and then set a port number
 
