@@ -125,16 +125,24 @@ export interface plObject {
 let checkTimeout: ReturnType<typeof setTimeout> | undefined;
 let checkInterval: number | undefined; //ReturnType<typeof setInterval> | undefined;
 
+/**
+ * Single source of truth for the VLC HTTP endpoint. Always reads the live plugin
+ * settings rather than the `currentConfig` snapshot, which only reflects the
+ * host/port/password VLC was last launched with and can go stale once the user
+ * updates the port or password in settings.
+ */
+const buildVlcUrl = (plugin: VLCBridgePlugin, pathAndQuery: string) => {
+  return `http://:${plugin.settings.password}@localhost:${plugin.settings.port}${pathAndQuery}`;
+};
+
 export function passPlugin(plugin: VLCBridgePlugin) {
   const getStatus = async () => {
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
     if (!(await isPortReachable(plugin.settings.port, { host: "localhost" }))) {
       new Notice(t("Could not connect to VLC Player."));
       return undefined;
     }
     try {
-      const response: vlcRequestResponse = await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json`);
+      const response: vlcRequestResponse = await requestUrl(buildVlcUrl(plugin, "/requests/status.json"));
       if (response.status == 200) {
         return response.json;
       } else {
@@ -148,13 +156,10 @@ export function passPlugin(plugin: VLCBridgePlugin) {
 
   const checkPort = (timeout?: number) => {
     return new Promise(async (res: (playlistResponse: plResponse | null) => void, rej) => {
-      const port_ = currentConfig.port || plugin.settings.port;
-      const password_ = currentConfig.password || plugin.settings.password;
-
       if (!timeout && !(await isPortReachable(plugin.settings.port, { host: "localhost" }))) {
         res(null);
       } else {
-        requestUrl(`http://:${password_}@localhost:${port_}/requests/playlist.json`)
+        requestUrl(buildVlcUrl(plugin, "/requests/playlist.json"))
           .then((response) => {
             if (response.status == 200) {
               checkInterval = clearInterval(checkInterval) as undefined;
@@ -173,7 +178,7 @@ export function passPlugin(plugin: VLCBridgePlugin) {
       }
       if (timeout) {
         checkInterval = window.setInterval(async () => {
-          requestUrl(`http://:${password_}@localhost:${port_}/requests/playlist.json`)
+          requestUrl(buildVlcUrl(plugin, "/requests/playlist.json"))
             .then((response) => {
               if (response.status == 200) {
                 checkInterval = clearInterval(checkInterval) as undefined;
@@ -181,7 +186,9 @@ export function passPlugin(plugin: VLCBridgePlugin) {
                 res(response.json);
               }
             })
-            .catch((err) => {});
+            .catch((err) => {
+              // transient connection refusal while VLC's HTTP interface is still starting up; keep polling
+            });
         }, 200);
 
         plugin.registerInterval(checkInterval);
@@ -198,9 +205,6 @@ export function passPlugin(plugin: VLCBridgePlugin) {
 
   // Reference: https://code.videolan.org/videolan/vlc-3.0/-/blob/master/share/lua/http/requests/README.txt
   const sendVlcRequest = async (command: string) => {
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
-
     if (checkInterval) {
       return;
     }
@@ -209,7 +213,7 @@ export function passPlugin(plugin: VLCBridgePlugin) {
       return;
     }
     return new Promise<RequestUrlResponse>((resolve, reject) => {
-      requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=${command}`)
+      requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=${command}`))
         .then((r) => {
           resolve(r);
         })
@@ -247,16 +251,13 @@ export function passPlugin(plugin: VLCBridgePlugin) {
   };
 
   const getCurrentVideo = async () => {
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
-
     return new Promise<plObject | null>(async (resolve, reject) => {
       if (!(await isPortReachable(plugin.settings.port, { host: "localhost" }))) {
         new Notice(t("Could not connect to VLC Player."));
         resolve(null);
         return;
       }
-      requestUrl(`http://:${password_}@localhost:${port_}/requests/playlist.json`)
+      requestUrl(buildVlcUrl(plugin, "/requests/playlist.json"))
         .then((r) => {
           const plResponse: plResponse = r.json;
           const current: plObject | undefined = plResponse?.children?.find((l) => (l.id = "1"))?.children?.find((source: plObject) => source.current);
@@ -314,9 +315,6 @@ export function passPlugin(plugin: VLCBridgePlugin) {
       subPath = decodeURIComponent(subPath);
     }
 
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
-
     if (checkInterval) {
       return;
     }
@@ -340,44 +338,44 @@ export function passPlugin(plugin: VLCBridgePlugin) {
         if (fileCheck.current) {
           timestamp = await editTimestamp(timestamp, mediaPath);
 
-          const status = await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=seek&val=${timestamp || ""}`);
+          const status = await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=seek&val=${timestamp || ""}`));
           if (status.json.state == "stopped") {
-            await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=pl_pause`);
+            await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=pl_pause`));
           }
           if (subPath && subPath !== currentMedia.subtitlePath) {
             await addSubtitle(subPath, subDelay);
           }
           if (status.json.state == "stopped" && timestamp.length) {
-            await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=seek&val=${timestamp}`);
+            await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=seek&val=${timestamp}`));
           }
         } else {
-          await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=pl_play&id=${fileCheck.id}`).then(async (response) => {
+          await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=pl_play&id=${fileCheck.id}`)).then(async (response) => {
             if (response.status == 200 && (await waitStreams())) {
               if (pause) {
-                await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=pl_forcepause`);
+                await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=pl_forcepause`));
               }
               if (subPath) {
                 await addSubtitle(subPath, subDelay);
               }
               timestamp = await editTimestamp(timestamp, mediaPath);
               if (timestamp.length) {
-                await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=seek&val=${timestamp}`);
+                await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=seek&val=${timestamp}`));
               }
             }
           });
         }
       } else {
-        await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=in_play&input=${encodeURIComponent(mediaPath)}`).then(async (response) => {
+        await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=in_play&input=${encodeURIComponent(mediaPath)}`)).then(async (response) => {
           if (response.status == 200 && (await waitStreams())) {
             if (pause) {
-              await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=pl_forcepause`);
+              await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=pl_forcepause`));
             }
             if (subPath) {
               await addSubtitle(subPath, subDelay);
             }
             timestamp = await editTimestamp(timestamp, mediaPath);
             if (timestamp.length) {
-              await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=seek&val=${timestamp}`);
+              await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=seek&val=${timestamp}`));
             }
           }
         });
@@ -387,52 +385,69 @@ export function passPlugin(plugin: VLCBridgePlugin) {
     }
   };
 
-  const waitStreams = () => {
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
-    return new Promise<string[]>((resolve, reject) => {
+  /**
+   * Polls VLC's status endpoint until playback streams are reported, VLC's HTTP
+   * interface becomes reachable, or the timeout elapses. Transient connection
+   * refusals are expected while VLC is still starting up and are swallowed
+   * instead of surfacing as unhandled rejections; only a terminal timeout
+   * produces a single Notice.
+   */
+  const waitStreams = (timeoutMs = 10000, pollIntervalMs = 500) => {
+    return new Promise<string[] | null>((resolve) => {
       let streamTimeout: ReturnType<typeof setTimeout> | undefined;
       let streamInterval: number | undefined; //ReturnType<typeof setInterval> | undefined;
-      streamInterval = window.setInterval(() => {
-        requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json`).then(async (response) => {
+
+      const cleanup = () => {
+        streamInterval = clearInterval(streamInterval) as undefined;
+        streamTimeout = clearTimeout(streamTimeout) as undefined;
+      };
+
+      const poll = async () => {
+        try {
+          const response = await requestUrl(buildVlcUrl(plugin, "/requests/status.json"));
           if (response.status == 200) {
-            const streams = Object.keys(response.json.information?.category);
+            const streams = Object.keys(response.json.information?.category ?? {});
             if (streams.length > 1) {
+              cleanup();
               resolve(streams);
-              streamInterval = clearInterval(streamInterval) as undefined;
-              streamTimeout = clearTimeout(streamTimeout) as undefined;
             }
           }
-        });
-      }, 500);
+        } catch (error) {
+          // Transient connection refusal while VLC's HTTP interface is still starting up; keep polling.
+        }
+      };
+
+      streamInterval = window.setInterval(poll, pollIntervalMs);
       plugin.registerInterval(streamInterval);
 
       streamTimeout = setTimeout(() => {
-        if (streamInterval) {
-          streamInterval = clearInterval(streamInterval) as undefined;
-          reject();
-        }
-      }, 10000);
+        cleanup();
+        new Notice(t("Could not connect to VLC Player."));
+        resolve(null);
+      }, timeoutMs);
+
+      poll();
     });
   };
 
   const addSubtitle = async (subtitlePath: string, subDelay?: string | undefined) => {
-    const port_ = currentConfig.port || plugin.settings.port;
-    const password_ = currentConfig.password || plugin.settings.password;
-
     if (subtitlePath.startsWith("file:///")) {
       subtitlePath = fileURLToPath(subtitlePath);
     }
 
-    const response = await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=addsubtitle&val=${encodeURIComponent(subtitlePath)}`);
+    const response = await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=addsubtitle&val=${encodeURIComponent(subtitlePath)}`));
     // .then(async (response) => {
     if (response?.status == 200) {
       currentMedia.mediaPath = (await getCurrentVideo())?.uri as string; // as decoded
       currentMedia.subtitlePath = subtitlePath;
-      const subIndex = (await waitStreams()).filter((e) => e !== "meta").length - 1;
-      await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=subtitle_track&val=${subIndex}`);
+      const streams = await waitStreams();
+      if (!streams) {
+        return;
+      }
+      const subIndex = streams.filter((e) => e !== "meta").length - 1;
+      await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=subtitle_track&val=${subIndex}`));
       if (subDelay) {
-        await requestUrl(`http://:${password_}@localhost:${port_}/requests/status.json?command=subdelay&val=${subDelay}`);
+        await requestUrl(buildVlcUrl(plugin, `/requests/status.json?command=subdelay&val=${subDelay}`));
       }
     }
     // });
