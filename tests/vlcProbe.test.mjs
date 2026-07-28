@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { classifyVlcProbe, isVlcPlaylistResponse } from "../src/vlcProbe.ts";
+import { classifyVlcProbe, isVlcPlaylistResponse } from "../src/vlcProbe.mjs";
 
 test("isVlcPlaylistResponse accepts a VLC-shaped playlist body", () => {
   assert.equal(isVlcPlaylistResponse({ type: "node", children: [] }), true);

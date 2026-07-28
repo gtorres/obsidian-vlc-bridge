@@ -7,7 +7,7 @@ import VLCBridgePlugin from "./main";
 import { t } from "./language/helpers";
 import { fileURLToPath, pathToFileURL } from "url";
 import isPortReachable from "is-port-reachable";
-import { classifyVlcProbe, VlcProbeClassification } from "./vlcProbe";
+import { classifyVlcProbe } from "./vlcProbe.mjs";
 
 declare module "obsidian" {
   interface DataAdapter {
@@ -139,6 +139,8 @@ const buildVlcUrl = (plugin: VLCBridgePlugin, pathAndQuery: string) => {
 const buildVlcUrlFor = (host: string, port: number, password: string, pathAndQuery: string) => {
   return `http://:${password}@${host}:${port}${pathAndQuery}`;
 };
+
+export type VlcProbeClassification = "closed" | "authenticated" | "unauthorized" | "occupied";
 
 export interface VlcProbeResult {
   classification: VlcProbeClassification;
