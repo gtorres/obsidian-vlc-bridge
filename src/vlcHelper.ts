@@ -8,6 +8,7 @@ import { t } from "./language/helpers";
 import { fileURLToPath, pathToFileURL } from "url";
 import isPortReachable from "is-port-reachable";
 import { classifyVlcProbe } from "./vlcProbe.mjs";
+import { getVlcExtraIntfArg } from "./vlcExtraIntf.mjs";
 
 declare module "obsidian" {
   interface DataAdapter {
@@ -494,7 +495,7 @@ export function passPlugin(plugin: VLCBridgePlugin) {
     }`,
     `${plugin.settings.commandPath == "vlcPath" && plugin.settings.vlcPath ? `"${plugin.settings.vlcPath}"` : plugin.cliExist ? `"${plugin.cliExist}"` : `"${plugin.settings.vlcPath}"`}`,
     `${type == "syncplay" ? "--" : ""}`,
-    `--extraintf=luaintf:http`,
+    getVlcExtraIntfArg({ isMacOS: Platform.isMacOS }),
     `--http-port=${plugin.settings.port}`,
     `--http-password=${plugin.settings.password}`,
     `--snapshot-path="${plugin.app.vault.adapter.getFullRealPath(plugin.settings.snapshotFolder)}"`,
