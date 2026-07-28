@@ -7,6 +7,7 @@ import VLCBridgePlugin from "./main";
 import { t } from "./language/helpers";
 import { fileURLToPath, pathToFileURL } from "url";
 import isPortReachable from "is-port-reachable";
+import { classifyVlcProbe } from "./vlcProbe.mjs";
 
 declare module "obsidian" {
   interface DataAdapter {
@@ -132,7 +133,41 @@ let checkInterval: number | undefined; //ReturnType<typeof setInterval> | undefi
  * updates the port or password in settings.
  */
 const buildVlcUrl = (plugin: VLCBridgePlugin, pathAndQuery: string) => {
-  return `http://:${plugin.settings.password}@localhost:${plugin.settings.port}${pathAndQuery}`;
+  return buildVlcUrlFor("localhost", plugin.settings.port, plugin.settings.password, pathAndQuery);
+};
+
+const buildVlcUrlFor = (host: string, port: number, password: string, pathAndQuery: string) => {
+  return `http://:${password}@${host}:${port}${pathAndQuery}`;
+};
+
+export type VlcProbeClassification = "closed" | "authenticated" | "unauthorized" | "occupied";
+
+export interface VlcProbeResult {
+  classification: VlcProbeClassification;
+  playlist: plResponse | null;
+}
+
+/**
+ * Determines what is actually listening on the configured VLC port, rather
+ * than treating any reachable TCP port as unusable. Probes
+ * `/requests/playlist.json` with the configured credentials and classifies
+ * the result as "closed" (safe to launch VLC), "authenticated" (a compatible
+ * VLC instance we can reuse), "unauthorized" (looks like VLC's HTTP
+ * interface but rejected the configured password), or "occupied" (something
+ * else is listening on the port).
+ */
+export const probeVlcEndpoint = async (host: string, port: number, password: string): Promise<VlcProbeResult> => {
+  const tcpReachable = await isPortReachable(port, { host });
+  if (!tcpReachable) {
+    return { classification: "closed", playlist: null };
+  }
+  try {
+    const response = await requestUrl({ url: buildVlcUrlFor(host, port, password, "/requests/playlist.json"), throw: false });
+    const classification = classifyVlcProbe({ tcpReachable, requestFailed: false, status: response.status, json: response.json });
+    return { classification, playlist: classification === "authenticated" ? (response.json as plResponse) : null };
+  } catch (error) {
+    return { classification: classifyVlcProbe({ tcpReachable, requestFailed: true }), playlist: null };
+  }
 };
 
 export function passPlugin(plugin: VLCBridgePlugin) {
@@ -156,27 +191,10 @@ export function passPlugin(plugin: VLCBridgePlugin) {
 
   const checkPort = (timeout?: number) => {
     return new Promise(async (res: (playlistResponse: plResponse | null) => void, rej) => {
-      if (!timeout && !(await isPortReachable(plugin.settings.port, { host: "localhost" }))) {
-        res(null);
+      if (!timeout) {
+        const probe = await probeVlcEndpoint("localhost", plugin.settings.port, plugin.settings.password);
+        res(probe.playlist);
       } else {
-        requestUrl(buildVlcUrl(plugin, "/requests/playlist.json"))
-          .then((response) => {
-            if (response.status == 200) {
-              checkInterval = clearInterval(checkInterval) as undefined;
-              checkTimeout = clearTimeout(checkTimeout) as undefined;
-
-              res(response.json);
-            } else if (!timeout) {
-              res(null);
-            }
-          })
-          .catch((err: Error) => {
-            if (!timeout) {
-              res(null);
-            }
-          });
-      }
-      if (timeout) {
         checkInterval = window.setInterval(async () => {
           requestUrl(buildVlcUrl(plugin, "/requests/playlist.json"))
             .then((response) => {
@@ -318,8 +336,18 @@ export function passPlugin(plugin: VLCBridgePlugin) {
     if (checkInterval) {
       return;
     }
-    let plInfo = await checkPort();
-    if (!plInfo) {
+    const probe = await probeVlcEndpoint("localhost", plugin.settings.port, plugin.settings.password);
+    let plInfo: plResponse | null = null;
+
+    if (probe.classification === "authenticated") {
+      // A compatible VLC instance is already running with the configured
+      // credentials — reuse it instead of launching another process.
+      plInfo = probe.playlist;
+    } else if (probe.classification === "unauthorized") {
+      return new Notice(t("VLC is already running on the configured port, but the configured password was rejected. Update the password in settings or close the other VLC instance."));
+    } else if (probe.classification === "occupied") {
+      return new Notice(t("The port you selected is not usable, please enter another port value"));
+    } else {
       if (!(plugin.settings.vlcPath || plugin.cliExist)) {
         if (Platform.isWin) {
           return new Notice(t("Before you can use the plugin, you need to select 'vlc.exe' in the plugin settings"));

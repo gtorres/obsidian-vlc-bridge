@@ -130,6 +130,8 @@ export default {
   "Before you can use the plugin, you need to select 'vlc.exe' in the plugin settings": "Before you can use the plugin, you need to select 'vlc.exe' in the plugin settings",
   "To use the plugin, the ‘vlc’ command must be installed on your system.": "To use the plugin, the ‘vlc’ command must be installed on your system.",
   "The port you selected is not usable, please enter another port value": "The port you selected is not usable, please enter another port value",
+  "VLC is already running on the configured port, but the configured password was rejected. Update the password in settings or close the other VLC instance.":
+    "VLC is already running on the configured port, but the configured password was rejected. Update the password in settings or close the other VLC instance.",
   "Could not connect to VLC Player.": "Could not connect to VLC Player.",
   "The vlc.exe specified in the settings could not be run, please check again!": "The vlc.exe specified in the settings could not be run, please check again!",
   "Timestamp is not valid": "Timestamp is not valid",
