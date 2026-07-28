@@ -1,8 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting, MarkdownRenderer, SliderComponent, TextComponent, ButtonComponent, ToggleComponent, Platform, TFile } from "obsidian";
 import VLCBridgePlugin from "./main";
 import { t } from "./language/helpers";
-import { currentConfig } from "./vlcHelper";
-import isPortReachable from "is-port-reachable";
+import { probeVlcEndpoint } from "./vlcHelper";
 import * as childProcess from "child_process";
 import * as path from "path";
 import { formatSubText, subtitlePlaceholder } from "./subtitleParser";
@@ -95,19 +94,9 @@ export class VBPluginSettingsTab extends PluginSettingTab {
 
     containerEl.empty();
 
-    const isPortAvailable = (port: number) => {
-      return new Promise<boolean>(async (resolve) => {
-        const isPortInUse = await isPortReachable(port, { host: "localhost" });
-        if (isPortInUse) {
-          if ((port == this.plugin.settings.port || port == currentConfig.port) && (await this.plugin.checkPort())) {
-            resolve(true);
-          } else {
-            resolve(false);
-          }
-        } else {
-          resolve(true);
-        }
-      });
+    const isPortAvailable = async (port: number) => {
+      const probe = await probeVlcEndpoint("localhost", port, this.plugin.settings.password);
+      return probe.classification === "closed" || probe.classification === "authenticated";
     };
 
     let copyUrlEl: Setting;
