@@ -198,7 +198,14 @@ export class VBPluginSettingsTab extends PluginSettingTab {
             8552 * 1000,
             entry,
             i,
-            { mediaPath: "", subPath: "", subDelay: null, filename: filename, timestampLinktext: this.plugin.settings.timestampLinktext },
+            {
+              mediaPath: "",
+              subPath: "",
+              subDelay: null,
+              filename: filename,
+              timestampLinktext: this.plugin.settings.timestampLinktext,
+              usePercentagePosition: this.plugin.settings.usePercentagePosition,
+            },
             this.plugin.settings.transcriptTemplate
           ).replaceAll("{{snapshot}}", ssLinkStr);
         })

@@ -337,6 +337,7 @@ export default class VLCBridgePlugin extends Plugin {
         template: this.settings.transcriptTemplate,
         filename: currentFilename,
         timestampLinktext: this.settings.timestampLinktext,
+        usePercentagePosition: this.settings.usePercentagePosition,
       });
     } else {
       subEntries = params.parsedEntries?.entries;

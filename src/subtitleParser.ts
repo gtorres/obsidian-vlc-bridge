@@ -49,8 +49,9 @@ export const getSubEntries = (params: {
   template: string;
   filename?: string;
   timestampLinktext?: string;
+  usePercentagePosition?: boolean;
 }) => {
-  const { length, subPath, mediaPath, subDelay, template, filename, timestampLinktext } = params;
+  const { length, subPath, mediaPath, subDelay, template, filename, timestampLinktext, usePercentagePosition } = params;
   const length_ = length.length;
   const currentPos = length.currentPos;
 
@@ -72,7 +73,14 @@ export const getSubEntries = (params: {
           length_ * 1000,
           e,
           i,
-          { mediaPath: mediaPath, subPath: subPath, subDelay: subDelay, filename: filename, timestampLinktext: timestampLinktext },
+          {
+            mediaPath: mediaPath,
+            subPath: subPath,
+            subDelay: subDelay,
+            filename: filename,
+            timestampLinktext: timestampLinktext,
+            usePercentagePosition: usePercentagePosition,
+          },
           currentPos ? template.replaceAll("{{index}}", e.id || "") : template
         ),
         posFrom: e.from / (length_ * 1000),
@@ -81,7 +89,14 @@ export const getSubEntries = (params: {
           length_ * 1000,
           e,
           i,
-          { mediaPath: mediaPath, subPath: subPath, subDelay: subDelay, filename: filename, timestampLinktext: timestampLinktext },
+          {
+            mediaPath: mediaPath,
+            subPath: subPath,
+            subDelay: subDelay,
+            filename: filename,
+            timestampLinktext: timestampLinktext,
+            usePercentagePosition: usePercentagePosition,
+          },
           DEFAULT_SETTINGS.transcriptTemplate
         ),
       };
@@ -122,6 +137,7 @@ export const formatSubText = (
     subDelay: number | null;
     filename?: string;
     timestampLinktext?: string;
+    usePercentagePosition?: boolean;
     // timestamp: string;
   },
   template: string
@@ -175,6 +191,7 @@ export const formatSubText = (
     subDelay: linkparams.subDelay,
     filename: linkparams.filename,
     timestampLinktext: linkparams.timestampLinktext || DEFAULT_SETTINGS.timestampLinktext,
+    usePercentagePosition: linkparams.usePercentagePosition ?? false,
   });
 
   const formattedStr = template

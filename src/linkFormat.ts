@@ -33,13 +33,14 @@ export const buildTimestampLink = (params: {
   subDelay: number | null;
   filename?: string;
   timestampLinktext: string;
+  usePercentagePosition: boolean;
 }) => {
-  const { fromMs, posFromPercent, mediaPath, subPath, subDelay, filename, timestampLinktext } = params;
+  const { fromMs, posFromPercent, mediaPath, subPath, subDelay, filename, timestampLinktext, usePercentagePosition } = params;
 
   const uriParams: { mediaPath: string; subPath: string; subDelay?: string; timestamp: string } = {
     mediaPath: encodeURIComponent(mediaPath),
     subPath: encodeURIComponent(subPath),
-    timestamp: `${posFromPercent}%`,
+    timestamp: usePercentagePosition ? `${posFromPercent}%` : `${fromMs / 1000}`,
   };
   if (subDelay && subDelay !== 0) {
     uriParams.subDelay = subDelay.toString();
