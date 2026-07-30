@@ -153,6 +153,9 @@ export class TranscriptView extends ItemView {
       mediaPath: this.mediaPath,
       subDelay: this.subDelay,
       template: this.plugin.settings.transcriptTemplate,
+      filename: this.title,
+      timestampLinktext: this.plugin.settings.timestampLinktext,
+      usePercentagePosition: this.plugin.settings.usePercentagePosition,
     });
     if (!subEntries) return;
     const dialogsView = subEntries.map((entry, i, arr) => {
@@ -170,7 +173,14 @@ export class TranscriptView extends ItemView {
             this.length * 1000,
             dialogEntry,
             i,
-            { subPath: this.subPath, mediaPath: this.mediaPath, subDelay: this.subDelay },
+            {
+              subPath: this.subPath,
+              mediaPath: this.mediaPath,
+              subDelay: this.subDelay,
+              filename: this.title,
+              timestampLinktext: this.plugin.settings.timestampLinktext,
+              usePercentagePosition: this.plugin.settings.usePercentagePosition,
+            },
             this.plugin.settings.transcriptTemplate
           );
         }

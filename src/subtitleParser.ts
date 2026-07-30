@@ -8,6 +8,8 @@ import parseAss from "@qgustavor/ass-parser";
 import { timestampToSeconds } from "./vlcHelper";
 import { DEFAULT_SETTINGS } from "./settings";
 import { t } from "./language/helpers";
+import { buildTimestampLink, msToTimestamp } from "./linkFormat";
+export { msToTimestamp } from "./linkFormat";
 // import * as iconv from "iconv-lite";
 // import * as jschardet from "jschardet";
 
@@ -45,8 +47,11 @@ export const getSubEntries = (params: {
   mediaPath: string;
   subDelay: number | null;
   template: string;
+  filename?: string;
+  timestampLinktext?: string;
+  usePercentagePosition?: boolean;
 }) => {
-  const { length, subPath, mediaPath, subDelay, template } = params;
+  const { length, subPath, mediaPath, subDelay, template, filename, timestampLinktext, usePercentagePosition } = params;
   const length_ = length.length;
   const currentPos = length.currentPos;
 
@@ -68,12 +73,32 @@ export const getSubEntries = (params: {
           length_ * 1000,
           e,
           i,
-          { mediaPath: mediaPath, subPath: subPath, subDelay: subDelay },
+          {
+            mediaPath: mediaPath,
+            subPath: subPath,
+            subDelay: subDelay,
+            filename: filename,
+            timestampLinktext: timestampLinktext,
+            usePercentagePosition: usePercentagePosition,
+          },
           currentPos ? template.replaceAll("{{index}}", e.id || "") : template
         ),
         posFrom: e.from / (length_ * 1000),
         posTo: e.to / (length_ * 1000),
-        simpleFormattedStr: formatSubText(length_ * 1000, e, i, { mediaPath: mediaPath, subPath: subPath, subDelay: subDelay }, DEFAULT_SETTINGS.transcriptTemplate),
+        simpleFormattedStr: formatSubText(
+          length_ * 1000,
+          e,
+          i,
+          {
+            mediaPath: mediaPath,
+            subPath: subPath,
+            subDelay: subDelay,
+            filename: filename,
+            timestampLinktext: timestampLinktext,
+            usePercentagePosition: usePercentagePosition,
+          },
+          DEFAULT_SETTINGS.transcriptTemplate
+        ),
       };
       formattedEntries.push({ ...e, ...entryObj });
     });
@@ -110,6 +135,9 @@ export const formatSubText = (
     mediaPath: string;
     subPath: string;
     subDelay: number | null;
+    filename?: string;
+    timestampLinktext?: string;
+    usePercentagePosition?: boolean;
     // timestamp: string;
   },
   template: string
@@ -117,6 +145,7 @@ export const formatSubText = (
   const placeholderIndex = "{{index}}";
   const placeholderFrom = "{{from}}";
   const placeholderTo = "{{to}}";
+  const placeholderTimestampLink = "{{timestamplink}}";
 
   const params: { mediaPath: string; subPath: string; subDelay?: string } = {
     mediaPath: encodeURIComponent(linkparams.mediaPath),
@@ -154,39 +183,27 @@ export const formatSubText = (
   const tsFrom = `[${msToTimestamp(entry.from).fullString}](obsidian://vlcBridge?${fromParamStr})`;
   const tsTo = `[${msToTimestamp(entry.to).fullString}](obsidian://vlcBridge?${toParamStr})`;
 
+  const timestampLink = buildTimestampLink({
+    fromMs: entry.from,
+    posFromPercent: posFrom,
+    mediaPath: linkparams.mediaPath,
+    subPath: linkparams.subPath,
+    subDelay: linkparams.subDelay,
+    filename: linkparams.filename,
+    timestampLinktext: linkparams.timestampLinktext || DEFAULT_SETTINGS.timestampLinktext,
+    usePercentagePosition: linkparams.usePercentagePosition ?? false,
+  });
+
   const formattedStr = template
     .replaceAll(placeholderIndex, (index + 1).toString())
     .replaceAll(placeholderFrom, tsFrom)
-    .replaceAll(placeholderTo, tsTo);
+    .replaceAll(placeholderTo, tsTo)
+    .replaceAll(placeholderTimestampLink, timestampLink);
   // .replaceAll(placeholderText, entry.text.trim())
   // .replaceAll(/^\s*(\-)/gm, "\\$1")
   // .replaceAll(/^\s*(\d*)(\.)/gm, "$1\\$2");
   // .replaceAll("")
   return formattedStr;
-};
-
-// https://stackoverflow.com/a/25279399
-export const msToTimestamp = (milliseconds: number) => {
-  milliseconds = Math.round(milliseconds);
-  const seconds = (milliseconds / 1000).toString().split(".")[0];
-  const ms = Math.round(((milliseconds / 1000) % 1) * 1000)
-    .toString()
-    ?.slice(0, 3);
-  const date = new Date(0);
-  date.setSeconds(Number(seconds), Number(ms || 0)); // specify value for SECONDS here
-  const timeString = date.toISOString().substring(11, 23);
-  const simplifiedStr = timeString.substring(milliseconds < 60 * 60 * 1000 ? 3 : 0);
-  const result = {
-    fullString: timeString,
-    simplified: simplifiedStr,
-    simplifiedWithoutMs: simplifiedStr.replace(/\.\d*$/, ""),
-    hh: timeString.split(":")[0],
-    mm: timeString.split(":")[1],
-    ss: timeString.split(":")[2].replace(/\.\d*$/, ""),
-    ms: timeString.split(".")[1],
-  };
-
-  return result;
 };
 
 const parseAssSub = (subtitleStr: string) => {

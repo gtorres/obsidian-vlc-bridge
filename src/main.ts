@@ -335,6 +335,9 @@ export default class VLCBridgePlugin extends Plugin {
         subPath: subPath,
         subDelay: status.subtitledelay == 0 ? null : status.subtitledelay,
         template: this.settings.transcriptTemplate,
+        filename: currentFilename,
+        timestampLinktext: this.settings.timestampLinktext,
+        usePercentagePosition: this.settings.usePercentagePosition,
       });
     } else {
       subEntries = params.parsedEntries?.entries;
