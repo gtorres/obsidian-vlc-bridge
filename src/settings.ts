@@ -134,7 +134,7 @@ export class VBPluginSettingsTab extends PluginSettingTab {
         createFragment((el) => {
           MarkdownRenderer.render(
             this.app,
-            `#### ${t("Placeholders")} \n- \`{{index}}\` \n- \`{{from}}\` \n- \`{{to}}\` \n- \`{{text}}\`\n- \`{{snapshot}}\`\n${
+            `#### ${t("Placeholders")} \n- \`{{index}}\` \n- \`{{from}}\` \n- \`{{to}}\` \n- \`{{text}}\`\n- \`{{timestamplink}}\`\n- \`{{snapshot}}\`\n${
               this.plugin.settings.transcriptTemplate.includes("{{snapshot}}")
                 ? `\n>[!info]\n>${t("For the {{1}} values in your template, snapshot will be captured and inserted when you copy the dialogs.", ["`{{snapshot}}`"])}\n`
                 : ""
@@ -194,10 +194,13 @@ export class VBPluginSettingsTab extends PluginSettingTab {
     const updateTranscriptTemplatePreview = () => {
       const transcriptTemplateStr = subtitlePlaceholder
         .map((entry, i) => {
-          return formatSubText(8552 * 1000, entry, i, { mediaPath: "", subPath: "", subDelay: null }, this.plugin.settings.transcriptTemplate).replaceAll(
-            "{{snapshot}}",
-            ssLinkStr
-          );
+          return formatSubText(
+            8552 * 1000,
+            entry,
+            i,
+            { mediaPath: "", subPath: "", subDelay: null, filename: filename, timestampLinktext: this.plugin.settings.timestampLinktext },
+            this.plugin.settings.transcriptTemplate
+          ).replaceAll("{{snapshot}}", ssLinkStr);
         })
         .join("\n");
 
