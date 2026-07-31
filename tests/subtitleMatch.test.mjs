@@ -39,9 +39,62 @@ test("findMatchingSubtitleFile: priority is not affected by filesystem enumerati
   assert.equal(forward, reversed);
 });
 
-test("findMatchingSubtitleFile: language-suffixed near-matches are ignored", () => {
-  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.srt", "video-name.fr.srt"], path.posix);
+test("findMatchingSubtitleFile: .en language-suffixed subtitle is matched", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.vtt"], path.posix);
+  assert.equal(result, "/movies/video-name.en.vtt");
+});
+
+test("findMatchingSubtitleFile: .eng language-suffixed subtitle is matched", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.eng.vtt"], path.posix);
+  assert.equal(result, "/movies/video-name.eng.vtt");
+});
+
+test("findMatchingSubtitleFile: .en-US locale-variant subtitle is matched", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en-US.vtt"], path.posix);
+  assert.equal(result, "/movies/video-name.en-US.vtt");
+});
+
+test("findMatchingSubtitleFile: reproduces the reported bug — real-world .en.vtt filename is matched without renaming", () => {
+  const result = findMatchingSubtitleFile(
+    "/videos/053 - ICT 2026 Entries & Drills - April 15, 2026.webm",
+    ["053 - ICT 2026 Entries & Drills - April 15, 2026.en.vtt"],
+    path.posix
+  );
+  assert.equal(result, "/videos/053 - ICT 2026 Entries & Drills - April 15, 2026.en.vtt");
+});
+
+test("findMatchingSubtitleFile: exact-basename match wins over a language-suffixed match, even across formats", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.srt", "video-name.ass"], path.posix);
+  assert.equal(result, "/movies/video-name.ass");
+});
+
+test("findMatchingSubtitleFile: exact and language-suffixed matches coexisting — exact wins and only one file is returned", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.srt", "video-name.en.srt", "video-name.eng.vtt"], path.posix);
+  assert.equal(result, "/movies/video-name.srt");
+});
+
+test("findMatchingSubtitleFile: deterministic selection among multiple language-suffixed candidates (.srt still wins over .vtt/.ass)", () => {
+  const forward = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.ass", "video-name.fr.vtt", "video-name.en.srt"], path.posix);
+  const reversed = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.srt", "video-name.fr.vtt", "video-name.en.ass"], path.posix);
+  assert.equal(forward, "/movies/video-name.en.srt");
+  assert.equal(forward, reversed);
+});
+
+test("findMatchingSubtitleFile: deterministic selection among same-extension language-suffixed candidates (sorted by suffix text, not enumeration order)", () => {
+  const forward = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.fr.srt", "video-name.en.srt"], path.posix);
+  const reversed = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.en.srt", "video-name.fr.srt"], path.posix);
+  assert.equal(forward, "/movies/video-name.en.srt");
+  assert.equal(forward, reversed);
+});
+
+test("findMatchingSubtitleFile: unrelated dotted filenames are not mistaken for language suffixes", () => {
+  const result = findMatchingSubtitleFile("/movies/video-name.mkv", ["video-name.backup.srt", "video-name.2024.vtt", "video-name.director-cut.ass"], path.posix);
   assert.equal(result, null);
+});
+
+test("findMatchingSubtitleFile: Windows-style paths support language-suffixed subtitles", () => {
+  const result = findMatchingSubtitleFile("C:\\Movies\\video-name.mkv", ["video-name.en-US.vtt", "video-name.mp4"], path.win32);
+  assert.equal(result, "C:\\Movies\\video-name.en-US.vtt");
 });
 
 test("findMatchingSubtitleFile: handles filenames with spaces and unicode characters", () => {
