@@ -5,9 +5,11 @@ import { t } from "./language/helpers";
 import extensionList from "./extensionList";
 import { fileURLToPath, pathToFileURL } from "url";
 import * as path from "path";
+import * as fs from "fs/promises";
 const commandExistsSync = require("command-exists").sync;
 import { resolveMacOSVlcExecutable } from "./macVlcDetect";
 import { getSubEntries, ISubEntry, msToTimestamp, supportedSubtitleFormats } from "./subtitleParser";
+import { autoLoadMatchingSubtitle } from "./subtitleMatch";
 import { IDialogEntry, ITranscriptViewState, TranscriptView, VIEW_TYPE_VB } from "./transcriptView";
 
 declare global {
@@ -847,12 +849,34 @@ export default class VLCBridgePlugin extends Plugin {
           const fileURI = pathToFileURL(file).href;
           console.log(result, fileURI);
 
-          this.openVideo({ mediaPath: fileURI });
+          await this.openVideo({ mediaPath: fileURI });
+          await this.autoLoadMatchingSubtitle(file);
         }
       })
       .catch((err: Error) => {
         console.log(err);
       });
+  }
+
+  /**
+   * Looks for a subtitle file next to `mediaPath` whose base filename
+   * matches exactly (e.g. `movie.mkv` + `movie.srt`), and loads it through
+   * the same `addSubtitle` used by the manual "Add subtitles" command. A
+   * missing match is not an error; a failure while loading a found match is
+   * surfaced as a Notice but never undoes the already-opened video.
+   */
+  async autoLoadMatchingSubtitle(mediaPath: string) {
+    await autoLoadMatchingSubtitle({
+      mediaPath,
+      readDir: (dir) => fs.readdir(dir),
+      addSubtitle: async (subtitlePath) => {
+        await this.addSubtitle(subtitlePath);
+      },
+      onError: (error) => {
+        console.log(error);
+        new Notice(t("Failed to automatically load matching subtitle file"));
+      },
+    });
   }
 
   async subtitleOpen() {
