@@ -10,6 +10,7 @@ export default {
   "Open with VLC Player": "Open with VLC Player",
   "Add subtitles": "Add subtitles",
   "A video must be open to add subtitles": "A video must be open to add subtitles",
+  "Failed to automatically load matching subtitle file": "Failed to automatically load matching subtitle file",
   "Next frame": "Next frame",
   "Previous frame": "Previous frame",
   "Seek forward": "Seek forward",

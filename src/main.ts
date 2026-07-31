@@ -5,9 +5,11 @@ import { t } from "./language/helpers";
 import extensionList from "./extensionList";
 import { fileURLToPath, pathToFileURL } from "url";
 import * as path from "path";
+import * as fs from "fs/promises";
 const commandExistsSync = require("command-exists").sync;
 import { resolveMacOSVlcExecutable } from "./macVlcDetect";
 import { getSubEntries, ISubEntry, msToTimestamp, supportedSubtitleFormats } from "./subtitleParser";
+import { autoLoadMatchingSubtitle } from "./subtitleMatch";
 import { IDialogEntry, ITranscriptViewState, TranscriptView, VIEW_TYPE_VB } from "./transcriptView";
 
 declare global {
@@ -847,12 +849,47 @@ export default class VLCBridgePlugin extends Plugin {
           const fileURI = pathToFileURL(file).href;
           console.log(result, fileURI);
 
-          this.openVideo({ mediaPath: fileURI });
+          await this.openVideo({ mediaPath: fileURI });
+          await this.autoLoadMatchingSubtitle(file);
         }
       })
       .catch((err: Error) => {
         console.log(err);
       });
+  }
+
+  /**
+   * Looks for a subtitle file next to `mediaPath` whose base filename
+   * matches exactly (e.g. `movie.mkv` + `movie.srt`), and loads it through
+   * the same `addSubtitle` used by the manual "Add subtitles" command.
+   *
+   * `waitForReady` reuses `checkPort(timeout)` — the plugin's existing
+   * bounded-polling readiness wait (200ms cadence, resolving as soon as an
+   * authenticated `/requests/playlist.json` request against the configured
+   * port/password succeeds, or `null` once the timeout elapses). This is the
+   * exact same helper and the exact same 5000ms bound `openVideo` already
+   * uses right after launching a fresh VLC process — reusing it here (rather
+   * than a single one-shot probe) is what actually survives a cold VLC
+   * startup, without adding a second/competing polling loop or an unbounded
+   * wait.
+   *
+   * A missing match is not an error; a readiness timeout or a failure while
+   * loading a found match is surfaced as a single Notice but never undoes
+   * the already-opened video.
+   */
+  async autoLoadMatchingSubtitle(mediaPath: string) {
+    await autoLoadMatchingSubtitle({
+      mediaPath,
+      readDir: (dir) => fs.readdir(dir),
+      addSubtitle: async (subtitlePath) => {
+        await this.addSubtitle(subtitlePath);
+      },
+      waitForReady: async () => !!(await this.checkPort(5000)),
+      onError: (error) => {
+        console.log(error);
+        new Notice(t("Failed to automatically load matching subtitle file"));
+      },
+    });
   }
 
   async subtitleOpen() {
