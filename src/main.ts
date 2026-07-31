@@ -863,16 +863,19 @@ export default class VLCBridgePlugin extends Plugin {
    * matches exactly (e.g. `movie.mkv` + `movie.srt`), and loads it through
    * the same `addSubtitle` used by the manual "Add subtitles" command.
    *
-   * `waitForReady` reuses `checkPort()` with no timeout — the same
-   * single-shot VLC HTTP probe (`probeVlcEndpoint`) `openVideo` itself uses
-   * to decide whether to reuse a running VLC instance — rather than a fixed
-   * sleep or a second polling loop. `openVideo` already waits for VLC's
-   * streams before returning in the paths where that wait is needed, so this
-   * is a cheap confirmation, not a duplicate wait.
+   * `waitForReady` reuses `checkPort(timeout)` — the plugin's existing
+   * bounded-polling readiness wait (200ms cadence, resolving as soon as an
+   * authenticated `/requests/playlist.json` request against the configured
+   * port/password succeeds, or `null` once the timeout elapses). This is the
+   * exact same helper and the exact same 5000ms bound `openVideo` already
+   * uses right after launching a fresh VLC process — reusing it here (rather
+   * than a single one-shot probe) is what actually survives a cold VLC
+   * startup, without adding a second/competing polling loop or an unbounded
+   * wait.
    *
-   * A missing match is not an error; a readiness check that fails or a
-   * failure while loading a found match is surfaced as a single Notice but
-   * never undoes the already-opened video.
+   * A missing match is not an error; a readiness timeout or a failure while
+   * loading a found match is surfaced as a single Notice but never undoes
+   * the already-opened video.
    */
   async autoLoadMatchingSubtitle(mediaPath: string) {
     await autoLoadMatchingSubtitle({
@@ -881,7 +884,7 @@ export default class VLCBridgePlugin extends Plugin {
       addSubtitle: async (subtitlePath) => {
         await this.addSubtitle(subtitlePath);
       },
-      waitForReady: async () => !!(await this.checkPort()),
+      waitForReady: async () => !!(await this.checkPort(5000)),
       onError: (error) => {
         console.log(error);
         new Notice(t("Failed to automatically load matching subtitle file"));

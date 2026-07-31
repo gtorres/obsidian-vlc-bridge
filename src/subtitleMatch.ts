@@ -66,28 +66,33 @@ export function findMatchingSubtitleFile(mediaPath: string, filenamesInDir: stri
 export interface IAutoLoadSubtitleResult {
   matchedPath: string | null;
   loaded: boolean;
-  /** True when `waitForReady` was provided and resolved false — subtitle loading never ran. */
+  /** True when `waitForReady` was provided and resolved false (bounded polling timed out) — subtitle loading never ran. */
   skippedNotReady: boolean;
 }
 
 /**
  * Orchestrates the "select a file to open with VLC Player" auto subtitle
- * step: optionally confirm VLC's HTTP interface is ready, list the video's
+ * step: wait for VLC HTTP readiness via bounded polling, list the video's
  * directory, find an exact-basename match, and load it through the same
  * `addSubtitle` the manual "Add subtitles" command uses — no duplicated
  * subtitle-loading logic, and no command invoking another command.
  *
- * `waitForReady` should reuse whatever readiness/probe mechanism the caller
- * already has (e.g. a single VLC HTTP probe) rather than adding a new
- * fixed-delay sleep or a second independent polling loop; the goal is a
- * cheap confirmation, not re-doing the readiness wait `openVideo` already
- * performed while launching/playing the video.
+ * `waitForReady` is expected to be the plugin's existing bounded-polling
+ * readiness wait (e.g. `checkPort(timeout)` — retry at its existing cadence,
+ * resolve true as soon as an authenticated check succeeds, resolve false the
+ * moment its timeout elapses) rather than a new fixed-delay sleep, an
+ * unbounded loop, or a second independent polling implementation. A cold VLC
+ * launch is not instantly ready, so a single one-shot probe is not
+ * sufficient here — bounded retrying is what lets auto-load survive that
+ * startup window without polling indefinitely or polling twice (this
+ * function calls `waitForReady` exactly once and, on success, calls
+ * `addSubtitle` at most once).
  *
  * A missing match is not an error (`loaded: false`, no error callback). A
- * readiness check that resolves false, a directory-listing failure, or a
- * failure while loading a found match are each reported via `onError` (at
- * most once per call) but never reject — the already-opened video must stay
- * open regardless of subtitle-loading outcome.
+ * readiness timeout, a directory-listing failure, or a failure while loading
+ * a found match are each reported via `onError` (at most once per call) but
+ * never reject — the already-opened video must stay open regardless of
+ * subtitle-loading outcome.
  */
 export async function autoLoadMatchingSubtitle(params: {
   mediaPath: string;

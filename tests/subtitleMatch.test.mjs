@@ -229,6 +229,149 @@ test("autoLoadMatchingSubtitle: a waitForReady rejection is reported via onError
   assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: true });
 });
 
+// Simulates the plugin's existing bounded-polling readiness wait
+// (vlcHelper.ts `checkPort(timeout)`): retries `check()` on a fixed cadence,
+// resolves as soon as `check()` returns truthy, and resolves `false` the
+// moment the bound elapses — it never polls indefinitely and never polls
+// again after success. `checkPort` itself can't be unit tested directly here
+// because it's driven by Obsidian's `requestUrl`/`window.setInterval` (no
+// runtime implementation outside Obsidian, same limitation documented in
+// vlcProbe.mjs), so these tests exercise the exact contract `waitForReady`
+// is expected to uphold when backed by that kind of bounded poll.
+function simulateBoundedPoll(check, { intervalMs = 5, timeoutMs = 30 } = {}) {
+  return new Promise((resolve) => {
+    let elapsedMs = 0;
+    const attempt = async () => {
+      const result = await check();
+      if (result) {
+        resolve(true);
+        return;
+      }
+      elapsedMs += intervalMs;
+      if (elapsedMs >= timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(attempt, intervalMs);
+    };
+    attempt();
+  });
+}
+
+test("autoLoadMatchingSubtitle: readiness retries after an initial false result, then succeeds — subtitle loading runs exactly once", async () => {
+  let checkCalls = 0;
+  let addSubtitleCalls = 0;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: () =>
+      simulateBoundedPoll(async () => {
+        checkCalls++;
+        return checkCalls >= 3; // false, false, true
+      }),
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {
+      addSubtitleCalls++;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(checkCalls, 3);
+  assert.equal(addSubtitleCalls, 1);
+  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: true, skippedNotReady: false });
+});
+
+test("autoLoadMatchingSubtitle: polling stops immediately after success and never calls addSubtitle more than once", async () => {
+  let checkCallsAfterSuccess = 0;
+  let succeeded = false;
+  let addSubtitleCalls = 0;
+  await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: () =>
+      simulateBoundedPoll(async () => {
+        if (succeeded) {
+          checkCallsAfterSuccess++;
+        }
+        succeeded = true;
+        return true;
+      }),
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {
+      addSubtitleCalls++;
+    },
+    pathModule: path.posix,
+  });
+
+  // Give any (incorrect) lingering poll a chance to fire before asserting.
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  assert.equal(checkCallsAfterSuccess, 0);
+  assert.equal(addSubtitleCalls, 1);
+});
+
+test("autoLoadMatchingSubtitle: readiness timeout (bounded polling never succeeds) prevents subtitle loading", async () => {
+  let addSubtitleCalled = false;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: () => simulateBoundedPoll(async () => false, { intervalMs: 5, timeoutMs: 15 }),
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {
+      addSubtitleCalled = true;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(addSubtitleCalled, false);
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: true });
+});
+
+test("autoLoadMatchingSubtitle: readiness timeout resolves normally and does not reject the caller (video-open flow is unaffected)", async () => {
+  await assert.doesNotReject(
+    autoLoadMatchingSubtitle({
+      mediaPath: "/movies/video-name.mkv",
+      waitForReady: () => simulateBoundedPoll(async () => false, { intervalMs: 5, timeoutMs: 15 }),
+      readDir: async () => ["video-name.srt"],
+      addSubtitle: async () => {},
+      pathModule: path.posix,
+    })
+  );
+});
+
+test("autoLoadMatchingSubtitle: readiness errors (bounded poll's check throws) produce at most one error callback", async () => {
+  let errorCount = 0;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: async () => {
+      throw new Error("port check request failed");
+    },
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {},
+    onError: () => {
+      errorCount++;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(errorCount, 1);
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: true });
+});
+
+test("autoLoadMatchingSubtitle: readiness succeeds via bounded polling but no matching subtitle exists — no error reported", async () => {
+  let errorCount = 0;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: () => simulateBoundedPoll(async () => true),
+    readDir: async () => ["unrelated.srt"],
+    addSubtitle: async () => {},
+    onError: () => {
+      errorCount++;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(errorCount, 0);
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: false });
+});
+
 test("autoLoadMatchingSubtitle: without a waitForReady dependency, behavior is unchanged (backward compatible)", async () => {
   const result = await autoLoadMatchingSubtitle({
     mediaPath: "/movies/video-name.mkv",
