@@ -71,7 +71,7 @@ test("autoLoadMatchingSubtitle: loads the matched subtitle through the shared ad
   });
 
   assert.equal(addSubtitleCalledWith, "/movies/video-name.srt");
-  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: true });
+  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: true, skippedNotReady: false });
 });
 
 test("autoLoadMatchingSubtitle: no matching subtitle does not call addSubtitle or report an error", async () => {
@@ -91,7 +91,7 @@ test("autoLoadMatchingSubtitle: no matching subtitle does not call addSubtitle o
 
   assert.equal(addSubtitleCalled, false);
   assert.equal(errorReported, false);
-  assert.deepEqual(result, { matchedPath: null, loaded: false });
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: false });
 });
 
 test("autoLoadMatchingSubtitle: a subtitle-loading failure is reported via onError but does not throw (video stays open)", async () => {
@@ -109,7 +109,7 @@ test("autoLoadMatchingSubtitle: a subtitle-loading failure is reported via onErr
   });
 
   assert.equal(reportedError.message, "VLC connection refused");
-  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: false });
+  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: false, skippedNotReady: false });
 });
 
 test("autoLoadMatchingSubtitle: a directory-listing failure is reported via onError but does not throw", async () => {
@@ -127,7 +127,117 @@ test("autoLoadMatchingSubtitle: a directory-listing failure is reported via onEr
   });
 
   assert.equal(reportedError.message, "ENOENT: no such directory");
-  assert.deepEqual(result, { matchedPath: null, loaded: false });
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: false });
+});
+
+test("autoLoadMatchingSubtitle: waits for readiness before reading the directory or loading a subtitle", async () => {
+  const callOrder = [];
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: async () => {
+      callOrder.push("waitForReady");
+      return true;
+    },
+    readDir: async () => {
+      callOrder.push("readDir");
+      return ["video-name.srt"];
+    },
+    addSubtitle: async () => {
+      callOrder.push("addSubtitle");
+    },
+    pathModule: path.posix,
+  });
+
+  assert.deepEqual(callOrder, ["waitForReady", "readDir", "addSubtitle"]);
+  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: true, skippedNotReady: false });
+});
+
+test("autoLoadMatchingSubtitle: readiness success triggers subtitle loading exactly once", async () => {
+  let readyCalls = 0;
+  let addSubtitleCalls = 0;
+  await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: async () => {
+      readyCalls++;
+      return true;
+    },
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {
+      addSubtitleCalls++;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(readyCalls, 1);
+  assert.equal(addSubtitleCalls, 1);
+});
+
+test("autoLoadMatchingSubtitle: readiness failure does not read the directory or load a subtitle, and reports one error", async () => {
+  let readDirCalled = false;
+  let addSubtitleCalled = false;
+  let errorCount = 0;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: async () => false,
+    readDir: async () => {
+      readDirCalled = true;
+      return ["video-name.srt"];
+    },
+    addSubtitle: async () => {
+      addSubtitleCalled = true;
+    },
+    onError: () => {
+      errorCount++;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(readDirCalled, false);
+  assert.equal(addSubtitleCalled, false);
+  assert.equal(errorCount, 1);
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: true });
+});
+
+test("autoLoadMatchingSubtitle: readiness failure does not reject and resolves normally (already-opened video is unaffected)", async () => {
+  await assert.doesNotReject(
+    autoLoadMatchingSubtitle({
+      mediaPath: "/movies/video-name.mkv",
+      waitForReady: async () => false,
+      readDir: async () => ["video-name.srt"],
+      addSubtitle: async () => {},
+      pathModule: path.posix,
+    })
+  );
+});
+
+test("autoLoadMatchingSubtitle: a waitForReady rejection is reported via onError but does not throw", async () => {
+  let reportedError = null;
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    waitForReady: async () => {
+      throw new Error("probe failed");
+    },
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {},
+    onError: (error) => {
+      reportedError = error;
+    },
+    pathModule: path.posix,
+  });
+
+  assert.equal(reportedError.message, "probe failed");
+  assert.deepEqual(result, { matchedPath: null, loaded: false, skippedNotReady: true });
+});
+
+test("autoLoadMatchingSubtitle: without a waitForReady dependency, behavior is unchanged (backward compatible)", async () => {
+  const result = await autoLoadMatchingSubtitle({
+    mediaPath: "/movies/video-name.mkv",
+    readDir: async () => ["video-name.srt"],
+    addSubtitle: async () => {},
+    pathModule: path.posix,
+  });
+
+  assert.deepEqual(result, { matchedPath: "/movies/video-name.srt", loaded: true, skippedNotReady: false });
 });
 
 test("autoLoadMatchingSubtitle: successful load reports loaded:true so transcript-view state can be considered populated", async () => {

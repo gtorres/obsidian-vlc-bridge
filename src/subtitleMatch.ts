@@ -66,47 +66,71 @@ export function findMatchingSubtitleFile(mediaPath: string, filenamesInDir: stri
 export interface IAutoLoadSubtitleResult {
   matchedPath: string | null;
   loaded: boolean;
+  /** True when `waitForReady` was provided and resolved false — subtitle loading never ran. */
+  skippedNotReady: boolean;
 }
 
 /**
  * Orchestrates the "select a file to open with VLC Player" auto subtitle
- * step: list the video's directory, find an exact-basename match, and load
- * it through the same `addSubtitle` the manual "Add subtitles" command uses
- * — no duplicated subtitle-loading logic, and no command invoking another
- * command.
+ * step: optionally confirm VLC's HTTP interface is ready, list the video's
+ * directory, find an exact-basename match, and load it through the same
+ * `addSubtitle` the manual "Add subtitles" command uses — no duplicated
+ * subtitle-loading logic, and no command invoking another command.
+ *
+ * `waitForReady` should reuse whatever readiness/probe mechanism the caller
+ * already has (e.g. a single VLC HTTP probe) rather than adding a new
+ * fixed-delay sleep or a second independent polling loop; the goal is a
+ * cheap confirmation, not re-doing the readiness wait `openVideo` already
+ * performed while launching/playing the video.
  *
  * A missing match is not an error (`loaded: false`, no error callback). A
- * failure while listing the directory or loading a found match is reported
- * via `onError` but never rejects — the already-opened video must stay open
- * regardless of subtitle-loading outcome.
+ * readiness check that resolves false, a directory-listing failure, or a
+ * failure while loading a found match are each reported via `onError` (at
+ * most once per call) but never reject — the already-opened video must stay
+ * open regardless of subtitle-loading outcome.
  */
 export async function autoLoadMatchingSubtitle(params: {
   mediaPath: string;
   readDir: (dir: string) => Promise<string[]>;
   addSubtitle: (subtitlePath: string) => Promise<void>;
+  waitForReady?: () => Promise<boolean>;
   onError?: (error: unknown) => void;
   pathModule?: typeof nodePath;
 }): Promise<IAutoLoadSubtitleResult> {
   const pathModule = params.pathModule ?? nodePath;
+
+  if (params.waitForReady) {
+    let ready = false;
+    try {
+      ready = await params.waitForReady();
+    } catch (error) {
+      params.onError?.(error);
+      return { matchedPath: null, loaded: false, skippedNotReady: true };
+    }
+    if (!ready) {
+      params.onError?.(new Error("VLC HTTP interface was not ready for automatic subtitle loading"));
+      return { matchedPath: null, loaded: false, skippedNotReady: true };
+    }
+  }
 
   let filenamesInDir: string[];
   try {
     filenamesInDir = await params.readDir(pathModule.dirname(params.mediaPath));
   } catch (error) {
     params.onError?.(error);
-    return { matchedPath: null, loaded: false };
+    return { matchedPath: null, loaded: false, skippedNotReady: false };
   }
 
   const matchedPath = findMatchingSubtitleFile(params.mediaPath, filenamesInDir, pathModule);
   if (!matchedPath) {
-    return { matchedPath: null, loaded: false };
+    return { matchedPath: null, loaded: false, skippedNotReady: false };
   }
 
   try {
     await params.addSubtitle(matchedPath);
-    return { matchedPath, loaded: true };
+    return { matchedPath, loaded: true, skippedNotReady: false };
   } catch (error) {
     params.onError?.(error);
-    return { matchedPath, loaded: false };
+    return { matchedPath, loaded: false, skippedNotReady: false };
   }
 }

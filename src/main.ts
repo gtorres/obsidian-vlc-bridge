@@ -861,9 +861,18 @@ export default class VLCBridgePlugin extends Plugin {
   /**
    * Looks for a subtitle file next to `mediaPath` whose base filename
    * matches exactly (e.g. `movie.mkv` + `movie.srt`), and loads it through
-   * the same `addSubtitle` used by the manual "Add subtitles" command. A
-   * missing match is not an error; a failure while loading a found match is
-   * surfaced as a Notice but never undoes the already-opened video.
+   * the same `addSubtitle` used by the manual "Add subtitles" command.
+   *
+   * `waitForReady` reuses `checkPort()` with no timeout — the same
+   * single-shot VLC HTTP probe (`probeVlcEndpoint`) `openVideo` itself uses
+   * to decide whether to reuse a running VLC instance — rather than a fixed
+   * sleep or a second polling loop. `openVideo` already waits for VLC's
+   * streams before returning in the paths where that wait is needed, so this
+   * is a cheap confirmation, not a duplicate wait.
+   *
+   * A missing match is not an error; a readiness check that fails or a
+   * failure while loading a found match is surfaced as a single Notice but
+   * never undoes the already-opened video.
    */
   async autoLoadMatchingSubtitle(mediaPath: string) {
     await autoLoadMatchingSubtitle({
@@ -872,6 +881,7 @@ export default class VLCBridgePlugin extends Plugin {
       addSubtitle: async (subtitlePath) => {
         await this.addSubtitle(subtitlePath);
       },
+      waitForReady: async () => !!(await this.checkPort()),
       onError: (error) => {
         console.log(error);
         new Notice(t("Failed to automatically load matching subtitle file"));
