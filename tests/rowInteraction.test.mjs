@@ -69,3 +69,37 @@ test("isRowActivationKey: other keys do not activate", () => {
   assert.equal(isRowActivationKey("a"), false);
   assert.equal(isRowActivationKey("Escape"), false);
 });
+
+// Models the click delegation actually wired in TranscriptView.setTranscriptEl:
+// the row-level click handler only calls seek() when isRowSeekTarget passes.
+const dispatchRowClick = (row, target, seek) => {
+  if (!isRowSeekTarget(target, row)) return;
+  seek();
+};
+
+test("row click delegation: clicking the row background seeks exactly once", () => {
+  const row = makeNode("div");
+  const background = makeNode("span", row);
+  let seekCount = 0;
+  dispatchRowClick(row, background, () => seekCount++);
+  assert.equal(seekCount, 1);
+});
+
+test("row click delegation: clicking the timestamp link does not fire the row's own seek (avoids double-seeking on top of the link's own navigation)", () => {
+  const row = makeNode("div");
+  const text = makeNode("div", row);
+  const link = makeNode("a", text);
+  let seekCount = 0;
+  dispatchRowClick(row, link, () => seekCount++);
+  assert.equal(seekCount, 0);
+});
+
+test("row click delegation: clicking a nested button/control does not fire the row's own seek", () => {
+  const row = makeNode("div");
+  const optionsContainer = makeNode("div-with-ignore-marker", row);
+  optionsContainer.matches = (selector) => selector.includes("data-vlc-bridge-row-ignore");
+  const button = makeNode("button", optionsContainer);
+  let seekCount = 0;
+  dispatchRowClick(row, button, () => seekCount++);
+  assert.equal(seekCount, 0);
+});

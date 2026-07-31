@@ -25,6 +25,23 @@ export const msToTimestamp = (milliseconds: number) => {
   return result;
 };
 
+export interface IDialogSeekEntry {
+  from: number;
+  to: number;
+}
+
+/**
+ * Resolves the seek target (ms and percentage-of-length) for a subtitle
+ * entry, honoring `jumpMiddleOfDialog`. Shared by the rendered transcript
+ * timestamp link and the transcript row's own click/keyboard seek handlers
+ * so both always agree on where an entry seeks to.
+ */
+export const computeDialogSeekTarget = (entry: IDialogSeekEntry, lengthMs: number, jumpMiddleOfDialog: boolean): { ms: number; percent: number } => {
+  const ms = jumpMiddleOfDialog ? Math.round((entry.from + entry.to) / 2) : entry.from;
+  const percent = (ms / lengthMs) * 100;
+  return { ms, percent };
+};
+
 export const buildTimestampLink = (params: {
   fromMs: number;
   posFromPercent: number;

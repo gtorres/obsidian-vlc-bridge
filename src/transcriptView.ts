@@ -19,6 +19,7 @@ import VLCBridgePlugin from "./main";
 import * as path from "path";
 import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
+import { computeDialogSeekTarget } from "./linkFormat";
 
 declare module "obsidian" {
   interface App {
@@ -157,6 +158,7 @@ export class TranscriptView extends ItemView {
       filename: this.title,
       timestampLinktext: this.plugin.settings.timestampLinktext,
       usePercentagePosition: this.plugin.settings.usePercentagePosition,
+      jumpMiddleOfDialog: this.plugin.settings.jumpMiddleOfDialog,
     });
     if (!subEntries) return;
     const dialogsView = subEntries.map((entry, i, arr) => {
@@ -195,6 +197,7 @@ export class TranscriptView extends ItemView {
               filename: this.title,
               timestampLinktext: this.plugin.settings.timestampLinktext,
               usePercentagePosition: this.plugin.settings.usePercentagePosition,
+              jumpMiddleOfDialog: this.plugin.settings.jumpMiddleOfDialog,
             },
             this.plugin.settings.transcriptTemplate
           );
@@ -312,11 +315,12 @@ export class TranscriptView extends ItemView {
   seekToDialog(index: number) {
     const entry = this.dialogsView?.[index];
     if (!entry) return;
+    const seekTarget = computeDialogSeekTarget(entry, this.length * 1000, this.plugin.settings.jumpMiddleOfDialog);
     this.plugin.openVideo({
       mediaPath: this.mediaPath,
       subPath: this.subPath,
       subDelay: this.subDelay?.toString(),
-      timestamp: this.plugin.settings.usePercentagePosition ? `${entry.posFrom * 100}%` : `${entry.from / 1000}`,
+      timestamp: this.plugin.settings.usePercentagePosition ? `${seekTarget.percent}%` : `${seekTarget.ms / 1000}`,
     });
   }
 

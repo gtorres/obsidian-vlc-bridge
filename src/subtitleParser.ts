@@ -8,7 +8,7 @@ import parseAss from "@qgustavor/ass-parser";
 import { timestampToSeconds } from "./vlcHelper";
 import { DEFAULT_SETTINGS } from "./settings";
 import { t } from "./language/helpers";
-import { buildTimestampLink, msToTimestamp } from "./linkFormat";
+import { buildTimestampLink, computeDialogSeekTarget, msToTimestamp } from "./linkFormat";
 export { msToTimestamp } from "./linkFormat";
 // import * as iconv from "iconv-lite";
 // import * as jschardet from "jschardet";
@@ -50,8 +50,9 @@ export const getSubEntries = (params: {
   filename?: string;
   timestampLinktext?: string;
   usePercentagePosition?: boolean;
+  jumpMiddleOfDialog?: boolean;
 }) => {
-  const { length, subPath, mediaPath, subDelay, template, filename, timestampLinktext, usePercentagePosition } = params;
+  const { length, subPath, mediaPath, subDelay, template, filename, timestampLinktext, usePercentagePosition, jumpMiddleOfDialog } = params;
   const length_ = length.length;
   const currentPos = length.currentPos;
 
@@ -80,6 +81,7 @@ export const getSubEntries = (params: {
             filename: filename,
             timestampLinktext: timestampLinktext,
             usePercentagePosition: usePercentagePosition,
+            jumpMiddleOfDialog: jumpMiddleOfDialog,
           },
           currentPos ? template.replaceAll("{{index}}", e.id || "") : template
         ),
@@ -96,6 +98,7 @@ export const getSubEntries = (params: {
             filename: filename,
             timestampLinktext: timestampLinktext,
             usePercentagePosition: usePercentagePosition,
+            jumpMiddleOfDialog: jumpMiddleOfDialog,
           },
           DEFAULT_SETTINGS.transcriptTemplate
         ),
@@ -138,6 +141,7 @@ export const formatSubText = (
     filename?: string;
     timestampLinktext?: string;
     usePercentagePosition?: boolean;
+    jumpMiddleOfDialog?: boolean;
     // timestamp: string;
   },
   template: string
@@ -158,6 +162,7 @@ export const formatSubText = (
   // const posFrom = ((entry.from + 10) / length) * 100;
   const posFrom = (entry.from / length) * 100;
   const posTo = (entry.to / length) * 100;
+  const seekTarget = computeDialogSeekTarget(entry, length, linkparams.jumpMiddleOfDialog ?? false);
 
   entry.text = entry.text.replaceAll(/\s+$/gm, "");
   //   .replaceAll(/^\s*(\-)/gm, "\\$1") // for prevent bullet lists
@@ -184,8 +189,8 @@ export const formatSubText = (
   const tsTo = `[${msToTimestamp(entry.to).fullString}](obsidian://vlcBridge?${toParamStr})`;
 
   const timestampLink = buildTimestampLink({
-    fromMs: entry.from,
-    posFromPercent: posFrom,
+    fromMs: seekTarget.ms,
+    posFromPercent: seekTarget.percent,
     mediaPath: linkparams.mediaPath,
     subPath: linkparams.subPath,
     subDelay: linkparams.subDelay,
