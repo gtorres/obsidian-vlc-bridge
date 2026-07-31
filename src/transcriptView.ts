@@ -18,6 +18,7 @@ import { formatSubText, getSubEntries, ISubEntry } from "./subtitleParser";
 import VLCBridgePlugin from "./main";
 import * as path from "path";
 import { t } from "./language/helpers";
+import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 
 declare module "obsidian" {
   interface App {
@@ -160,11 +161,25 @@ export class TranscriptView extends ItemView {
     if (!subEntries) return;
     const dialogsView = subEntries.map((entry, i, arr) => {
       const entryEl = transcriptEl.createDiv();
-      const dialogEl = entryEl.createDiv({ cls: "vlc-bridge-ts-dialog" });
+      const dialogEl = entryEl.createDiv({ cls: "vlc-bridge-ts-dialog vlc-bridge-ts-dialog-seekable" });
       const dialogOptEl = dialogEl.createDiv({ cls: "vlc-bridge-ts-dialog-options" });
+      dialogOptEl.setAttr("data-vlc-bridge-row-ignore", "true");
       const dialogOptions = this.setDialogOptions(dialogOptEl, i);
       const dialogTextEl = dialogEl.createDiv({ cls: "vlc-bridge-ts-dialog-text" });
       entryEl.createEl("hr", { cls: "vlc-bridge-ts-separator" });
+
+      dialogEl.setAttr("tabindex", "0");
+      dialogEl.setAttr("role", "button");
+      this.registerDomEvent(dialogEl, "click", (event) => {
+        if (!isRowSeekTarget(event.target as HTMLElement | null, dialogEl)) return;
+        this.seekToDialog(i);
+      });
+      this.registerDomEvent(dialogEl, "keydown", (event) => {
+        if (!isRowActivationKey(event.key)) return;
+        if (!isRowSeekTarget(event.target as HTMLElement | null, dialogEl)) return;
+        event.preventDefault();
+        this.seekToDialog(i);
+      });
 
       const getDialogView = (reload: boolean, snapshotFiles?: TFile[] | undefined) => {
         const dialogEntry = this.dialogsView?.[i] || entry;
@@ -292,6 +307,17 @@ export class TranscriptView extends ItemView {
     });
     this.dialogsView = dialogsView;
     this.updateDialogs(false);
+  }
+
+  seekToDialog(index: number) {
+    const entry = this.dialogsView?.[index];
+    if (!entry) return;
+    this.plugin.openVideo({
+      mediaPath: this.mediaPath,
+      subPath: this.subPath,
+      subDelay: this.subDelay?.toString(),
+      timestamp: this.plugin.settings.usePercentagePosition ? `${entry.posFrom * 100}%` : `${entry.from / 1000}`,
+    });
   }
 
   updateDialogs(reload: boolean) {
