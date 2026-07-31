@@ -20,13 +20,39 @@ import * as nodePath from "path";
 export const subtitleExtensionPriority: string[] = [".srt", ".vtt", ".ass"];
 
 /**
- * Finds a subtitle file that exactly matches a video's base filename (the
- * filename without its extension) among a list of filenames from the same
- * directory. "Exact" means `video-name.srt`, not language-suffixed variants
- * like `video-name.en.srt` — those are intentionally not matched.
+ * Matches a BCP-47-ish language tag used as a subtitle filename suffix, e.g.
+ * `en`, `eng`, `en-US`. Deliberately permissive (2-3 letter primary subtag,
+ * optional 2-4 letter/digit region/script subtag) rather than a strict BCP-47
+ * validator — the goal is to recognize the common "video.<lang>.ext" naming
+ * convention, not to validate real-world language tags.
+ */
+const languageSuffixPattern = /^[a-z]{2,3}(-[a-z0-9]{2,4})?$/i;
+
+interface SubtitleCandidate {
+  filename: string;
+  ext: string;
+  /** 0 for an exact basename match, 1 for a language-suffixed match. Exact always outranks suffixed. */
+  specificity: 0 | 1;
+  /** Language suffix text (e.g. "en-US"), used only to break ties deterministically among suffixed candidates. */
+  langSuffix: string;
+}
+
+/**
+ * Finds a subtitle file that matches a video's base filename among a list of
+ * filenames from the same directory. Two kinds of match are recognized:
  *
- * When multiple supported extensions match, the result is chosen by
- * `subtitleExtensionPriority`, never by the order filenames were passed in.
+ * - Exact: `video-name.srt`
+ * - Language-suffixed: `video-name.en.srt`, `video-name.eng.srt`,
+ *   `video-name.en-US.srt` — the suffix must look like a language tag
+ *   (`languageSuffixPattern`); arbitrary dotted suffixes like
+ *   `video-name.backup.srt` are not matched.
+ *
+ * Priority when multiple candidates exist:
+ * 1. Exact matches always outrank language-suffixed matches.
+ * 2. Within a specificity tier, `subtitleExtensionPriority` decides (.srt > .vtt > .ass).
+ * 3. Any remaining tie (e.g. two different language suffixes with the same
+ *    extension) is broken by sorting the suffix text, so the result never
+ *    depends on filesystem enumeration order.
  *
  * @param mediaPath Full path (any OS) to the video file.
  * @param filenamesInDir Filenames (not full paths) present in the video's directory.
@@ -34,13 +60,14 @@ export const subtitleExtensionPriority: string[] = [".srt", ".vtt", ".ass"];
  *   `path` module. Tests can pass `path.win32` / `path.posix` explicitly to
  *   exercise a specific path style regardless of the host OS.
  * @returns The full path (in the same directory as mediaPath) of the matched
- *   subtitle file, or null if none of the supported extensions match exactly.
+ *   subtitle file, or null if no supported extension matches.
  */
 export function findMatchingSubtitleFile(mediaPath: string, filenamesInDir: string[], pathModule: typeof nodePath = nodePath): string | null {
   const dir = pathModule.dirname(mediaPath);
   const videoBaseName = pathModule.basename(mediaPath, pathModule.extname(mediaPath));
+  const suffixPrefix = `${videoBaseName}.`;
 
-  const matchesByExt = new Map<string, string>();
+  const candidates: SubtitleCandidate[] = [];
   for (const filename of filenamesInDir) {
     const ext = pathModule.extname(filename);
     const normalizedExt = ext.toLowerCase();
@@ -49,18 +76,30 @@ export function findMatchingSubtitleFile(mediaPath: string, filenamesInDir: stri
     }
     const baseName = pathModule.basename(filename, ext);
     if (baseName === videoBaseName) {
-      matchesByExt.set(normalizedExt, filename);
+      candidates.push({ filename, ext: normalizedExt, specificity: 0, langSuffix: "" });
+      continue;
+    }
+    if (baseName.startsWith(suffixPrefix)) {
+      const langSuffix = baseName.slice(suffixPrefix.length);
+      if (languageSuffixPattern.test(langSuffix)) {
+        candidates.push({ filename, ext: normalizedExt, specificity: 1, langSuffix });
+      }
     }
   }
 
-  for (const ext of subtitleExtensionPriority) {
-    const match = matchesByExt.get(ext);
-    if (match) {
-      return pathModule.join(dir, match);
+  candidates.sort((a, b) => {
+    if (a.specificity !== b.specificity) {
+      return a.specificity - b.specificity;
     }
-  }
+    const extRankDiff = subtitleExtensionPriority.indexOf(a.ext) - subtitleExtensionPriority.indexOf(b.ext);
+    if (extRankDiff !== 0) {
+      return extRankDiff;
+    }
+    return a.langSuffix.localeCompare(b.langSuffix);
+  });
 
-  return null;
+  const best = candidates[0];
+  return best ? pathModule.join(dir, best.filename) : null;
 }
 
 export interface IAutoLoadSubtitleResult {
@@ -73,7 +112,7 @@ export interface IAutoLoadSubtitleResult {
 /**
  * Orchestrates the "select a file to open with VLC Player" auto subtitle
  * step: wait for VLC HTTP readiness via bounded polling, list the video's
- * directory, find an exact-basename match, and load it through the same
+ * directory, find a matching subtitle (exact or language-suffixed), and load it through the same
  * `addSubtitle` the manual "Add subtitles" command uses — no duplicated
  * subtitle-loading logic, and no command invoking another command.
  *
