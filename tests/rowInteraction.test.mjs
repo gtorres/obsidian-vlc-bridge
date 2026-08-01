@@ -94,6 +94,36 @@ test("row click delegation: clicking the timestamp link does not fire the row's 
   assert.equal(seekCount, 0);
 });
 
+test("isRowSeekTarget: the row's selection checkbox is not a seek target", () => {
+  const row = makeNode("div");
+  const optionsContainer = makeNode("div-with-ignore-marker", row);
+  optionsContainer.matches = (selector) => selector.includes("data-vlc-bridge-row-ignore");
+  const checkbox = makeNode("input", optionsContainer);
+  assert.equal(isRowSeekTarget(checkbox, row), false);
+});
+
+test("row click delegation: clicking the selection checkbox does not fire the row's own seek", () => {
+  const row = makeNode("div");
+  const checkbox = makeNode("input", row);
+  let seekCount = 0;
+  dispatchRowClick(row, checkbox, () => seekCount++);
+  assert.equal(seekCount, 0);
+});
+
+test("row keydown delegation: Space/Enter on the selection checkbox does not activate the row seek (models the guard used by TranscriptView's keydown handler)", () => {
+  const row = makeNode("div");
+  const checkbox = makeNode("input", row);
+  let seekCount = 0;
+  const dispatchRowKeydown = (key) => {
+    if (!isRowActivationKey(key)) return;
+    if (!isRowSeekTarget(checkbox, row)) return;
+    seekCount++;
+  };
+  dispatchRowKeydown(" ");
+  dispatchRowKeydown("Enter");
+  assert.equal(seekCount, 0);
+});
+
 test("row click delegation: clicking a nested button/control does not fire the row's own seek", () => {
   const row = makeNode("div");
   const optionsContainer = makeNode("div-with-ignore-marker", row);

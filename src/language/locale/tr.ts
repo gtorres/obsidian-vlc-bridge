@@ -141,6 +141,8 @@ export default {
   "Copy dialogs": "Diyalogları kopyala",
   "Copy selected dialogs": "İşaretlileri kopyala",
   "Copy all": "Hepsini kopyala",
+  "Select dialog for copying": "Kopyalamak için diyalogu seç",
+  "No dialogs selected": "Hiçbir diyalog seçilmedi",
   "Show current dialog": "Şu anki diyalogu göster",
   "Follow current dialog": "Diyalogları takip et",
   "Highlight and scroll": "İşaretle ve kaydır",

@@ -145,6 +145,8 @@ export default {
   "Copy dialogs": "Copy dialogs",
   "Copy selected dialogs": "Copy selected dialogs",
   "Copy all": "Copy all",
+  "Select dialog for copying": "Select dialog for copying",
+  "No dialogs selected": "No dialogs selected",
   "Show current dialog": "Show current dialog",
   "Follow current dialog": "Follow current dialog",
   "Highlight and scroll": "Highlight and scroll",

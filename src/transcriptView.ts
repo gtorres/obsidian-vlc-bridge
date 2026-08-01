@@ -10,7 +10,6 @@ import {
   SearchComponent,
   setTooltip,
   TFile,
-  ToggleComponent,
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
@@ -20,6 +19,7 @@ import * as path from "path";
 import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 import { computeDialogSeekTarget } from "./linkFormat";
+import { filterSelectedDialogs, hasNoSelection } from "./dialogSelection";
 import {
   ActiveTranscriptRowTracker,
   findActiveTranscriptEntryIndex,
@@ -56,7 +56,7 @@ export interface ITranscriptViewState {
 }
 
 export interface IDialogEntry extends ISubEntry {
-  checkbox: ToggleComponent;
+  checkbox: HTMLInputElement;
   // copyBtn: ExtraButtonComponent;
   dialogEl: HTMLDivElement;
   dialogTextEl: HTMLDivElement;
@@ -472,8 +472,9 @@ export class TranscriptView extends ItemView {
   }
 
   setDialogOptions(dialogOptEl: HTMLDivElement, i: number) {
-    const checkbox: ToggleComponent = new ToggleComponent(dialogOptEl).setValue(false);
-    checkbox.toggleEl.addClass("mod-small");
+    const checkbox = dialogOptEl.createEl("input", { type: "checkbox", cls: "vlc-bridge-ts-dialog-checkbox" });
+    checkbox.setAttr("aria-label", t("Select dialog for copying"));
+    setTooltip(checkbox, t("Select dialog for copying"));
 
     new ExtraButtonComponent(dialogOptEl)
       .setIcon("lucide-copy")
@@ -573,7 +574,11 @@ export class TranscriptView extends ItemView {
           .setTitle(t("Copy selected dialogs"))
           .setIcon("list-todo")
           .onClick(async () => {
-            const selectedDialogs = this.dialogsView.filter((e) => e.checkbox.getValue());
+            if (hasNoSelection(this.dialogsView)) {
+              new Notice(t("No dialogs selected"));
+              return;
+            }
+            const selectedDialogs = filterSelectedDialogs(this.dialogsView);
             let formattedStr;
             if (selectedDialogs) {
               if (selectedDialogs.some((e) => e.formattedStr.includes("{{snapshot}}"))) {
