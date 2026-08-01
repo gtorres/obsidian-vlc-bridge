@@ -20,6 +20,7 @@ import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 import { computeDialogSeekTarget } from "./linkFormat";
 import { filterSelectedDialogs, hasNoSelection } from "./dialogSelection";
+import { joinDialogsForClipboard, toClipboardText } from "./clipboardFormat";
 import {
   ActiveTranscriptRowTracker,
   findActiveTranscriptEntryIndex,
@@ -493,7 +494,7 @@ export class TranscriptView extends ItemView {
             },
           });
         } else {
-          formattedStr = this.dialogsView[i].formattedStr;
+          formattedStr = toClipboardText(this.dialogsView[i].formattedStr);
         }
         if (formattedStr) {
           await navigator.clipboard.writeText(formattedStr);
@@ -593,7 +594,7 @@ export class TranscriptView extends ItemView {
                   },
                 });
               } else {
-                formattedStr = selectedDialogs.map((e) => e.formattedStr).join("\n");
+                formattedStr = joinDialogsForClipboard(selectedDialogs.map((e) => e.formattedStr));
               }
               if (formattedStr) {
                 await navigator.clipboard.writeText(formattedStr);
@@ -620,7 +621,7 @@ export class TranscriptView extends ItemView {
                 },
               });
             } else {
-              formattedStr = this.dialogsView.map((e) => e.formattedStr).join("\n");
+              formattedStr = joinDialogsForClipboard(this.dialogsView.map((e) => e.formattedStr));
             }
             if (formattedStr) {
               await navigator.clipboard.writeText(formattedStr);
