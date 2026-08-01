@@ -56,6 +56,10 @@
   float: inline-start;
   padding: 0.7em;
 }
+.vlc-bridge-ts-dialog-checkbox {
+  cursor: pointer;
+  vertical-align: middle;
+}
 .vlc-bridge-ts-dialog-text {
   float: inline-end;
   flex: content;
