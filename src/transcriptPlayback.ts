@@ -142,20 +142,32 @@ export const isAutoRevealOwner = (followEnabled: boolean, followAndScroll: boole
  * view close/replace so a later view starts clean.
  */
 export class TranscriptRevealGate {
-  private lastRevealedIndex: number | null = null;
+  private currentIndex: number | null = null;
+  private handledCurrentTransition = false;
 
   /**
    * `isFullyVisible` reflects the row's current on-screen state. Returns
-   * true (and should be scrolled into view) only the first time a given
-   * `activeIndex` is evaluated while it is not fully visible.
+   * true (and should be scrolled into view) only the first time the
+   * *current* active-index transition is evaluated while it is not fully
+   * visible. Deduplication is scoped to this transition, not to the index
+   * value's whole history — a row that returns to active after playback
+   * has moved away from it (e.g. a backward seek) starts a fresh
+   * transition and is eligible to reveal again, even if that same index
+   * was already handled earlier.
    */
   shouldReveal(activeIndex: number | null, isFullyVisible: boolean): boolean {
-    if (activeIndex === null || activeIndex === this.lastRevealedIndex) return false;
-    this.lastRevealedIndex = activeIndex;
+    if (activeIndex !== this.currentIndex) {
+      this.currentIndex = activeIndex;
+      this.handledCurrentTransition = false;
+    }
+    if (activeIndex === null || this.handledCurrentTransition) return false;
+
+    this.handledCurrentTransition = true;
     return !isFullyVisible;
   }
 
   reset(): void {
-    this.lastRevealedIndex = null;
+    this.currentIndex = null;
+    this.handledCurrentTransition = false;
   }
 }

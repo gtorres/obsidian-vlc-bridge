@@ -350,6 +350,23 @@ test("TranscriptRevealGate: a null active index never triggers a reveal", () => 
   assert.equal(gate.shouldReveal(null, false), false);
 });
 
+test("TranscriptRevealGate: a row that was visible on one transition reveals on a later transition back to it (A visible -> B -> A not visible)", () => {
+  const gate = new TranscriptRevealGate();
+
+  // Row A becomes active while fully visible: no reveal needed.
+  assert.equal(gate.shouldReveal(0, true), false);
+
+  // Playback advances to row B: handled as its own transition.
+  assert.equal(gate.shouldReveal(1, true), false);
+
+  // Backward seek returns to row A, which the user has since scrolled out of view:
+  // this is a new transition back to A, so it must reveal exactly once.
+  assert.equal(gate.shouldReveal(0, false), true);
+
+  // Re-evaluating the same transition (no active-index change) must not reveal again.
+  assert.equal(gate.shouldReveal(0, false), false);
+});
+
 test("TranscriptRevealGate: reset() (view close/replace) allows a later transcript view to reveal normally", () => {
   const gate = new TranscriptRevealGate();
   gate.shouldReveal(2, false);
