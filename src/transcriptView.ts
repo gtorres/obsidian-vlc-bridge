@@ -61,8 +61,6 @@ export interface IDialogEntry extends ISubEntry {
   dialogEl: HTMLDivElement;
   dialogTextEl: HTMLDivElement;
   getDialogView: (reload: boolean, snapshotFiles?: TFile[]) => void;
-  setRangeBtn: ExtraButtonComponent;
-  rangeMarker: string | null;
 }
 
 export class TranscriptView extends ItemView {
@@ -438,12 +436,10 @@ export class TranscriptView extends ItemView {
       return {
         ...entry,
         checkbox: dialogOptions.checkbox,
-        setRangeBtn: dialogOptions.setRangeBtn,
         // copyBtn: copyBtn,
         dialogEl: dialogEl,
         dialogTextEl: dialogTextEl,
         getDialogView,
-        rangeMarker: i == 0 ? "start" : i == arr.length - 1 ? "end" : null,
       };
     });
     this.dialogsView = dialogsView;
@@ -504,64 +500,7 @@ export class TranscriptView extends ItemView {
         }
       });
 
-    const updateRange = () => {
-      const startMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "start");
-      const endMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "end");
-      const start = Math.min(startMarker, endMarker);
-      const end = Math.max(startMarker, endMarker);
-      this.dialogsView.forEach((e, i) => {
-        if (i < start || i > end) {
-          e.setRangeBtn.extraSettingsEl.removeClass("mod-warning");
-          e.setRangeBtn.setIcon("minus");
-        } else {
-          e.setRangeBtn.extraSettingsEl.addClass("mod-warning");
-          e.setRangeBtn.setIcon("chevrons-left-right-ellipsis");
-        }
-      });
-    };
-    const setRangeBtn: ExtraButtonComponent = new ExtraButtonComponent(dialogOptEl).setIcon("chevrons-left-right-ellipsis").setTooltip(t("Adjust range"));
-    setRangeBtn.extraSettingsEl.onclick = async (event) => {
-      const menu = new Menu();
-
-      menu.addItem((item) =>
-        item
-          .setTitle(t("Set as start of range"))
-          .setIcon("list-start")
-          .onClick(() => {
-            if (this.dialogsView[i].rangeMarker !== null) {
-              return;
-            }
-            const currentMarker = this.dialogsView.find((e) => e.rangeMarker == "start");
-            if (currentMarker) {
-              currentMarker.rangeMarker = null;
-            }
-            this.dialogsView[i].rangeMarker = "start";
-            updateRange();
-          })
-      );
-
-      menu.addItem((item) =>
-        item
-          .setTitle(t("Set as end of range"))
-          .setIcon("list-end")
-          .onClick(() => {
-            if (this.dialogsView[i].rangeMarker !== null) {
-              return;
-            }
-            const currentMarker = this.dialogsView.find((e) => e.rangeMarker == "end");
-            if (currentMarker) {
-              currentMarker.rangeMarker = null;
-            }
-            this.dialogsView[i].rangeMarker = "end";
-            updateRange();
-          })
-      );
-
-      menu.showAtMouseEvent(event);
-    };
-    setRangeBtn.extraSettingsEl.addClass("mod-warning");
-
-    return { checkbox, setRangeBtn };
+    return { checkbox };
   }
 
   setOptionsEl() {
@@ -620,7 +559,6 @@ export class TranscriptView extends ItemView {
   }
   setActions() {
     this.addCopyLinesAction();
-    this.addSelectLinesAction();
     this.addViewCurrentLineAction();
     this.addFollowCurrentLineAction();
     this.addRefreshAction();
@@ -636,40 +574,6 @@ export class TranscriptView extends ItemView {
           .setIcon("list-todo")
           .onClick(async () => {
             const selectedDialogs = this.dialogsView.filter((e) => e.checkbox.getValue());
-            let formattedStr;
-            if (selectedDialogs) {
-              if (selectedDialogs.some((e) => e.formattedStr.includes("{{snapshot}}"))) {
-                formattedStr = await this.plugin.getSubWithSnapshots({
-                  parsedEntries: {
-                    entries: selectedDialogs,
-                    filename: this.title,
-                    length: this.length,
-                    mediaPath: this.mediaPath,
-                    subPath: this.subPath,
-                    subDelay: this.subDelay,
-                  },
-                });
-              } else {
-                formattedStr = selectedDialogs.map((e) => e.formattedStr).join("\n");
-              }
-              if (formattedStr) {
-                await navigator.clipboard.writeText(formattedStr);
-                new Notice(t("Copied to clipboard"));
-              }
-            }
-          })
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle(t("Copy dialogs in range"))
-          .setIcon("logs")
-          .onClick(async () => {
-            const startMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "start");
-            const endMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "end");
-            const start = Math.min(startMarker, endMarker);
-            const end = Math.max(startMarker, endMarker);
-
-            const selectedDialogs = this.dialogsView.slice(start || 0, (end || this.dialogsView.length - 1) + 1);
             let formattedStr;
             if (selectedDialogs) {
               if (selectedDialogs.some((e) => e.formattedStr.includes("{{snapshot}}"))) {
@@ -717,46 +621,6 @@ export class TranscriptView extends ItemView {
               await navigator.clipboard.writeText(formattedStr);
               new Notice(t("Copied to clipboard"));
             }
-          })
-      );
-
-      menu.showAtMouseEvent(event);
-    });
-  }
-  addSelectLinesAction() {
-    this.addAction("square-check-big", t("Toggle dialogs in range"), (event) => {
-      const menu = new Menu();
-
-      menu.addItem((item) =>
-        item
-          .setTitle(t("Select in range"))
-          .setIcon("list-checks")
-          .onClick(() => {
-            const startMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "start");
-            const endMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "end");
-            const start = Math.min(startMarker, endMarker);
-            const end = Math.max(startMarker, endMarker);
-            this.dialogsView.forEach((e, i) => {
-              if (i >= start && i <= end) {
-                e.checkbox.setValue(true);
-              }
-            });
-          })
-      );
-      menu.addItem((item) =>
-        item
-          .setTitle(t("Deselect in range"))
-          .setIcon("layout-list")
-          .onClick(() => {
-            const startMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "start");
-            const endMarker = this.dialogsView.findIndex((e) => e.rangeMarker == "end");
-            const start = Math.min(startMarker, endMarker);
-            const end = Math.max(startMarker, endMarker);
-            this.dialogsView.forEach((e, i) => {
-              if (i >= start && i <= end) {
-                e.checkbox.setValue(false);
-              }
-            });
           })
       );
 
