@@ -45,6 +45,13 @@
   transition: 1s;
   padding-inline-end: 0.5em;
 }
+.vlc-bridge-ts-dialog-seekable {
+  cursor: pointer;
+}
+.vlc-bridge-ts-dialog-seekable:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
 .vlc-bridge-ts-dialog-options {
   float: inline-start;
   padding: 0.7em;
