@@ -20,6 +20,7 @@ import * as path from "path";
 import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 import { computeDialogSeekTarget } from "./linkFormat";
+import { ActiveTranscriptRowTracker, findActiveTranscriptEntryIndex } from "./transcriptPlayback";
 
 declare module "obsidian" {
   interface App {
@@ -37,6 +38,7 @@ declare module "obsidian" {
 }
 
 export const VIEW_TYPE_VB = "vlc-bridge-transcript";
+export const ACTIVE_ROW_CLASS = "vlc-bridge-ts-dialog-active";
 
 export interface ITranscriptViewState {
   length: number;
@@ -62,8 +64,13 @@ export class TranscriptView extends ItemView {
   optionsEl: HTMLDivElement;
   searchMatches: { matchedRegex: RegExp | null; spanArr: HTMLSpanElement[] };
   searchRegex: RegExp;
-  followingInterval: number | null; //ReturnType<typeof setInterval> | null;
   followAndScroll: boolean;
+  followEnabled: boolean;
+  followActionBtn: HTMLElement | null;
+  followFocusedDialog: IDialogEntry | null;
+
+  activeRowTracker: ActiveTranscriptRowTracker;
+  syncInterval: number | null;
 
   length: number;
   subPath: string;
@@ -76,6 +83,7 @@ export class TranscriptView extends ItemView {
     super(leaf);
     this.plugin = plugin;
     this.searchMatches = { matchedRegex: null, spanArr: [] };
+    this.activeRowTracker = new ActiveTranscriptRowTracker();
     this.setActions();
   }
   setState(state: ITranscriptViewState, result: ViewStateResult): Promise<void> {
@@ -135,6 +143,7 @@ export class TranscriptView extends ItemView {
   async onOpen() {}
   createView() {
     if (!(this.length && this.mediaPath && this.subPath)) return;
+    this.stopPlaybackSync();
     this.contentEl.empty();
 
     const container = this.contentEl.createDiv({ cls: "vlc-bridge-transcriptView" });
@@ -143,6 +152,93 @@ export class TranscriptView extends ItemView {
     this.transcriptEl = container.createDiv({ cls: "vlc-bridge-dialog-container" });
     this.setTranscriptEl();
     this.setOptionsEl();
+    this.startPlaybackSync();
+  }
+
+  /** Single owner of VLC status polling for this view: drives both the active-row sync and the "Follow current dialog" highlight. */
+  startPlaybackSync() {
+    if (this.syncInterval) return;
+    this.syncInterval = window.setInterval(() => {
+      this.pollPlaybackStatus();
+    }, 500);
+    this.plugin.registerInterval(this.syncInterval);
+  }
+
+  stopPlaybackSync() {
+    this.activeRowTracker.invalidate();
+    if (this.syncInterval) {
+      clearInterval(this.syncInterval);
+      this.syncInterval = null;
+    }
+    this.followEnabled = false;
+    this.followActionBtn?.removeClass("mod-cta");
+    this.followFocusedDialog = null;
+  }
+
+  async pollPlaybackStatus() {
+    const token = this.activeRowTracker.beginRequest();
+    if (token === null) return; // a previous status request is still in flight; skip this tick
+
+    // Uses getStatus (silent on failure) rather than sendVlcRequest, which raises a
+    // "Could not connect to VLC Player" Notice on every failed call — unsuitable for
+    // a poll that keeps running for as long as the view stays open.
+    let positionMs: number | null = null;
+    let mediaMatched = false;
+    try {
+      const status = await this.plugin.getStatus();
+      if (status?.position != null) {
+        const currentVideo = await this.plugin.getCurrentVideo();
+        if (currentVideo?.uri == this.mediaPath) {
+          mediaMatched = true;
+          positionMs = Math.round(this.length * status.position * 1000);
+        }
+      }
+    } catch (error) {
+      positionMs = null;
+      mediaMatched = false;
+    }
+
+    const result = this.activeRowTracker.resolve(token, this.dialogsView ?? [], positionMs);
+    if (!result) return; // stale: view closed/replaced while the request was in flight
+
+    if (result.changed) {
+      this.applyActiveRowChange(result.previousIndex, result.activeIndex);
+    }
+    this.applyFollowTick(result.activeIndex, mediaMatched);
+  }
+
+  applyActiveRowChange(previousIndex: number | null, activeIndex: number | null) {
+    if (previousIndex !== null) {
+      this.dialogsView?.[previousIndex]?.dialogEl.removeClass(ACTIVE_ROW_CLASS);
+    }
+    if (activeIndex !== null) {
+      this.dialogsView?.[activeIndex]?.dialogEl.addClass(ACTIVE_ROW_CLASS);
+    }
+  }
+
+  applyFollowTick(activeIndex: number | null, mediaMatched: boolean) {
+    if (!this.followEnabled) return;
+
+    if (!mediaMatched) {
+      this.followEnabled = false;
+      this.followActionBtn?.removeClass("mod-cta");
+      if (this.followFocusedDialog) {
+        this.followFocusedDialog.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
+        this.followFocusedDialog = null;
+      }
+      new Notice(t("Current dialog could not be detected"));
+      return;
+    }
+
+    const currentDialog = activeIndex !== null ? this.dialogsView?.[activeIndex] : null;
+    if (!currentDialog || currentDialog === this.followFocusedDialog) return;
+
+    this.followFocusedDialog?.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
+    currentDialog.dialogEl.addClass("vlc-bridge-ts-dialog-focus");
+    this.followFocusedDialog = currentDialog;
+    if (this.followAndScroll) {
+      currentDialog.dialogEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   setTranscriptEl() {
@@ -625,56 +721,27 @@ export class TranscriptView extends ItemView {
       menu.showAtMouseEvent(event);
     });
   }
-  async jumpCurrentLine(type: "jump" | "follow", actionBtn?: HTMLElement) {
+  /** One-off "Show current dialog" lookup — uses a fresh status request rather than waiting for the next sync tick. */
+  async jumpToCurrentDialog() {
     const status = (await this.plugin.sendVlcRequest(""))?.json;
     if (status?.position && (await this.plugin.getCurrentVideo())?.uri == this.mediaPath) {
-      const currentPos = status?.position;
-      const positionMs = Math.round(this.length * currentPos * 1000);
-
-      const currentDialog = this.dialogsView.find((e, i, arr) => (e.from <= positionMs && i + 1 < arr.length ? positionMs < arr[i + 1]?.from : true));
+      const positionMs = Math.round(this.length * status.position * 1000);
+      const activeIndex = findActiveTranscriptEntryIndex(this.dialogsView, positionMs);
+      const currentDialog = activeIndex !== null ? this.dialogsView[activeIndex] : null;
       if (currentDialog) {
-        if (type == "jump") {
-          currentDialog.dialogEl.scrollIntoView({ behavior: "smooth", block: "center" });
-          currentDialog.dialogEl.addClass("vlc-bridge-ts-dialog-focus");
-          setTimeout(() => {
-            currentDialog?.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
-          }, 1000);
-        } else {
-          if (!currentDialog.dialogEl.hasClass("vlc-bridge-ts-dialog-focus")) {
-            this.dialogsView.forEach((e) => {
-              if (e !== currentDialog) {
-                e.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
-              }
-            });
-            currentDialog.dialogEl.addClass("vlc-bridge-ts-dialog-focus");
-            if (this.followAndScroll) {
-              currentDialog.dialogEl.scrollIntoView({ behavior: "smooth", block: "center" });
-            }
-          }
-        }
-      } else {
-        if (type == "jump") {
-          new Notice(t("Current dialog could not be detected"));
-          return;
-        }
+        currentDialog.dialogEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        currentDialog.dialogEl.addClass("vlc-bridge-ts-dialog-focus");
+        setTimeout(() => {
+          currentDialog?.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
+        }, 1000);
+        return;
       }
-    } else {
-      if (actionBtn) {
-        actionBtn.removeClass("mod-cta");
-      }
-      if (this.followingInterval) {
-        clearInterval(this.followingInterval);
-        this.dialogsView.forEach((e) => {
-          e.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
-        });
-      }
-      new Notice(t("Current dialog could not be detected"));
-      return;
     }
+    new Notice(t("Current dialog could not be detected"));
   }
   addViewCurrentLineAction() {
     this.addAction("scan", t("Show current dialog"), async (event) => {
-      this.jumpCurrentLine("jump");
+      this.jumpToCurrentDialog();
     });
   }
   addFollowCurrentLineAction() {
@@ -688,13 +755,7 @@ export class TranscriptView extends ItemView {
           .onClick(() => {
             actionBtn.addClass("mod-cta");
             this.followAndScroll = true;
-            if (!this.followingInterval) {
-              this.followingInterval = window.setInterval(async () => {
-                await this.jumpCurrentLine("follow", actionBtn);
-              }, 500);
-
-              this.plugin.registerInterval(this.followingInterval);
-            }
+            this.followEnabled = true;
           })
       );
 
@@ -705,13 +766,7 @@ export class TranscriptView extends ItemView {
           .onClick(() => {
             actionBtn.addClass("mod-cta");
             this.followAndScroll = false;
-            if (!this.followingInterval) {
-              this.followingInterval = window.setInterval(async () => {
-                await this.jumpCurrentLine("follow", actionBtn);
-              }, 500);
-
-              this.plugin.registerInterval(this.followingInterval);
-            }
+            this.followEnabled = true;
           })
       );
 
@@ -721,19 +776,17 @@ export class TranscriptView extends ItemView {
           .setIcon("octagon-x")
           .onClick(() => {
             actionBtn.removeClass("mod-cta");
-            if (this.followingInterval) {
-              clearInterval(this.followingInterval);
-              this.followingInterval = null;
+            this.followEnabled = false;
+            if (this.followFocusedDialog) {
+              this.followFocusedDialog.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
+              this.followFocusedDialog = null;
             }
-
-            this.dialogsView.forEach((e) => {
-              e.dialogEl.removeClass("vlc-bridge-ts-dialog-focus");
-            });
           })
       );
 
       menu.showAtMouseEvent(event);
     });
+    this.followActionBtn = actionBtn;
   }
 
   addRefreshAction() {
@@ -830,5 +883,7 @@ export class TranscriptView extends ItemView {
     }
   }
 
-  async onClose() {}
+  async onClose() {
+    this.stopPlaybackSync();
+  }
 }
