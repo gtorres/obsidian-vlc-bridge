@@ -20,7 +20,14 @@ import * as path from "path";
 import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 import { computeDialogSeekTarget } from "./linkFormat";
-import { ActiveTranscriptRowTracker, findActiveTranscriptEntryIndex, isValidPlaybackPosition } from "./transcriptPlayback";
+import {
+  ActiveTranscriptRowTracker,
+  findActiveTranscriptEntryIndex,
+  isAutoRevealOwner,
+  isRectFullyVisible,
+  isValidPlaybackPosition,
+  TranscriptRevealGate,
+} from "./transcriptPlayback";
 
 declare module "obsidian" {
   interface App {
@@ -70,6 +77,7 @@ export class TranscriptView extends ItemView {
   followFocusedDialog: IDialogEntry | null;
 
   activeRowTracker: ActiveTranscriptRowTracker;
+  revealGate: TranscriptRevealGate;
   syncInterval: number | null;
 
   length: number;
@@ -84,6 +92,7 @@ export class TranscriptView extends ItemView {
     this.plugin = plugin;
     this.searchMatches = { matchedRegex: null, spanArr: [] };
     this.activeRowTracker = new ActiveTranscriptRowTracker();
+    this.revealGate = new TranscriptRevealGate();
     this.setActions();
   }
   setState(state: ITranscriptViewState, result: ViewStateResult): Promise<void> {
@@ -166,6 +175,7 @@ export class TranscriptView extends ItemView {
 
   stopPlaybackSync() {
     this.activeRowTracker.invalidate();
+    this.revealGate.reset();
     if (this.syncInterval) {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
@@ -213,6 +223,38 @@ export class TranscriptView extends ItemView {
     }
     if (activeIndex !== null) {
       this.dialogsView?.[activeIndex]?.dialogEl.addClass(ACTIVE_ROW_CLASS);
+    }
+    this.revealActiveRow(activeIndex);
+  }
+
+  /**
+   * Single owner of automatic (non-explicit-follow) scroll-into-view for the
+   * active row. Scrolls the transcript container only — never the page or an
+   * unrelated ancestor — and only when the row isn't already fully visible.
+   * Stands down when "Highlight and scroll" is active, since that follow
+   * tick already reveals the row unconditionally (see applyFollowTick).
+   */
+  revealActiveRow(activeIndex: number | null) {
+    if (activeIndex === null) return;
+    if (!isAutoRevealOwner(this.followEnabled, this.followAndScroll)) return;
+
+    const dialogEl = this.dialogsView?.[activeIndex]?.dialogEl;
+    const container = this.transcriptEl;
+    if (!dialogEl || !container) return;
+
+    const elRect = dialogEl.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const shouldReveal = this.revealGate.shouldReveal(activeIndex, isRectFullyVisible(elRect, containerRect));
+    if (!shouldReveal) return;
+
+    let scrollDelta = 0;
+    if (elRect.top < containerRect.top) {
+      scrollDelta = elRect.top - containerRect.top;
+    } else if (elRect.bottom > containerRect.bottom) {
+      scrollDelta = elRect.bottom - containerRect.bottom;
+    }
+    if (scrollDelta !== 0) {
+      container.scrollTo({ top: container.scrollTop + scrollDelta, behavior: "smooth" });
     }
   }
 
