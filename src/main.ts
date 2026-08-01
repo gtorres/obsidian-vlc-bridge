@@ -11,6 +11,7 @@ import { resolveMacOSVlcExecutable } from "./macVlcDetect";
 import { getSubEntries, ISubEntry, msToTimestamp, supportedSubtitleFormats } from "./subtitleParser";
 import { autoLoadMatchingSubtitle } from "./subtitleMatch";
 import { IDialogEntry, ITranscriptViewState, TranscriptView, VIEW_TYPE_VB } from "./transcriptView";
+import { joinDialogsForClipboard, toClipboardText } from "./clipboardFormat";
 
 declare global {
   interface File {
@@ -401,7 +402,7 @@ export default class VLCBridgePlugin extends Plugin {
           }
 
           if (snapshot) {
-            newSubEntries.push(entry.formattedStr.replaceAll(snapshotPlaceholder, snapshot.snapshotEmbed));
+            newSubEntries.push(toClipboardText(entry.formattedStr.replaceAll(snapshotPlaceholder, snapshot.snapshotEmbed)));
 
             if (!isSnapshotAlreadyExist) {
               const endTime = Date.now() - startTime;
@@ -459,9 +460,9 @@ export default class VLCBridgePlugin extends Plugin {
     }
 
     if (newSubEntries.length > 0) {
-      formattedStr = newSubEntries?.join("\n\n");
+      formattedStr = newSubEntries.join("\n\n");
     } else {
-      formattedStr = subEntries?.map((e) => e.formattedStr).join("\n\n") || "";
+      formattedStr = joinDialogsForClipboard(subEntries?.map((e) => e.formattedStr) || []);
     }
     // if (lastPosition) {
     //   await this.openVideo(lastPosition.params);
