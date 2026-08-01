@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { findActiveTranscriptEntryIndex, ActiveTranscriptRowTracker } from "../src/transcriptPlayback.ts";
+import { findActiveTranscriptEntryIndex, ActiveTranscriptRowTracker, isValidPlaybackPosition } from "../src/transcriptPlayback.ts";
 
 test("findActiveTranscriptEntryIndex: empty entries returns null", () => {
   assert.equal(findActiveTranscriptEntryIndex([], 1000), null);
@@ -77,6 +77,40 @@ test("findActiveTranscriptEntryIndex: does not scan every entry (binary search, 
 
   assert.equal(index, size - 2);
   assert.ok(fromReads < 25, `expected O(log n) reads for ${size} entries, got ${fromReads}`);
+});
+
+// isValidPlaybackPosition — guards the "Show current dialog" lookup (jumpToCurrentDialog
+// in transcriptView.ts) against treating a valid position of 0 (start of the video) as
+// "no position available". Regression coverage for that bug.
+
+test("isValidPlaybackPosition: 0 is a valid playback position", () => {
+  assert.equal(isValidPlaybackPosition(0), true);
+});
+
+test("isValidPlaybackPosition: null and undefined are not valid positions", () => {
+  assert.equal(isValidPlaybackPosition(null), false);
+  assert.equal(isValidPlaybackPosition(undefined), false);
+});
+
+test("isValidPlaybackPosition: a nonzero position is valid", () => {
+  assert.equal(isValidPlaybackPosition(0.42), true);
+});
+
+test("current-row lookup: a VLC position of 0 selects the first transcript entry when it starts at 0ms", () => {
+  const entries = [{ from: 0 }, { from: 1000 }, { from: 2000 }];
+  // Mirrors jumpToCurrentDialog's guard + lookup: isValidPlaybackPosition(status?.position)
+  // followed by findActiveTranscriptEntryIndex once a position is confirmed valid.
+  const status = { position: 0 };
+  const lengthMs = 5000;
+
+  assert.equal(isValidPlaybackPosition(status.position), true);
+  const positionMs = Math.round(lengthMs * status.position);
+  assert.equal(findActiveTranscriptEntryIndex(entries, positionMs), 0);
+});
+
+test("current-row lookup: a missing/null position is rejected before any row lookup is attempted", () => {
+  assert.equal(isValidPlaybackPosition(undefined), false);
+  assert.equal(isValidPlaybackPosition(null), false);
 });
 
 // ActiveTranscriptRowTracker — the framework-agnostic state machine behind the

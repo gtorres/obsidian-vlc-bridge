@@ -20,7 +20,7 @@ import * as path from "path";
 import { t } from "./language/helpers";
 import { isRowActivationKey, isRowSeekTarget } from "./rowInteraction";
 import { computeDialogSeekTarget } from "./linkFormat";
-import { ActiveTranscriptRowTracker, findActiveTranscriptEntryIndex } from "./transcriptPlayback";
+import { ActiveTranscriptRowTracker, findActiveTranscriptEntryIndex, isValidPlaybackPosition } from "./transcriptPlayback";
 
 declare module "obsidian" {
   interface App {
@@ -724,8 +724,8 @@ export class TranscriptView extends ItemView {
   /** One-off "Show current dialog" lookup — uses a fresh status request rather than waiting for the next sync tick. */
   async jumpToCurrentDialog() {
     const status = (await this.plugin.sendVlcRequest(""))?.json;
-    if (status?.position && (await this.plugin.getCurrentVideo())?.uri == this.mediaPath) {
-      const positionMs = Math.round(this.length * status.position * 1000);
+    if (isValidPlaybackPosition(status?.position) && (await this.plugin.getCurrentVideo())?.uri == this.mediaPath) {
+      const positionMs = Math.round(this.length * status!.position * 1000);
       const activeIndex = findActiveTranscriptEntryIndex(this.dialogsView, positionMs);
       const currentDialog = activeIndex !== null ? this.dialogsView[activeIndex] : null;
       if (currentDialog) {

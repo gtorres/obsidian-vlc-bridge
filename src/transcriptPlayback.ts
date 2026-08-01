@@ -41,6 +41,16 @@ export const findActiveTranscriptEntryIndex = (entries: ITranscriptTimedEntry[],
   return result;
 };
 
+/**
+ * A VLC status position of `0` is a valid playback position (the very start
+ * of the video) and must not be treated as "no position" — a truthy check
+ * (`status?.position && ...`) would incorrectly reject it. Only `null`/`undefined`
+ * mean no position is available.
+ */
+export const isValidPlaybackPosition = (position: number | null | undefined): position is number => {
+  return position != null;
+};
+
 export interface IActiveRowSyncResult {
   changed: boolean;
   previousIndex: number | null;
