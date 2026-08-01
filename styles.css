@@ -66,6 +66,16 @@
   background-color: var(--table-selection);
   transition: 0.2s;
 }
+.vlc-bridge-ts-dialog-active {
+  background-color: color-mix(in srgb, var(--interactive-accent) 15%, transparent);
+  box-shadow: inset 3px 0 0 0 var(--interactive-accent);
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+/* Temporary focus (search jump / "Show current dialog") intensifies the persistent
+   active-row highlight instead of replacing it, so the two never visually fight. */
+.vlc-bridge-ts-dialog-active.vlc-bridge-ts-dialog-focus {
+  background-color: color-mix(in srgb, var(--interactive-accent) 30%, transparent);
+}
 .vlc-bridge-ts-dialog-search {
   background-color: var(--code-value);
 

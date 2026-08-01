@@ -110,3 +110,64 @@ export class ActiveTranscriptRowTracker {
     return { changed, previousIndex, activeIndex };
   }
 }
+
+/** Top/bottom edges only — the transcript container scrolls vertically, so left/right are irrelevant. */
+export interface IVerticalRect {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * Whether `elRect` is entirely within `containerRect`, top and bottom.
+ * Boundary-equal edges (e.g. `elRect.top === containerRect.top`) count as visible.
+ */
+export const isRectFullyVisible = (elRect: IVerticalRect, containerRect: IVerticalRect): boolean => {
+  return elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom;
+};
+
+/**
+ * A "Highlight and scroll" follow-scroll tick already reveals the active row
+ * unconditionally, so the automatic reveal path must stand down for that tick
+ * to avoid two competing scrolls. Kept as a pure predicate so the ownership
+ * rule is testable without a view/DOM.
+ */
+export const isAutoRevealOwner = (followEnabled: boolean, followAndScroll: boolean): boolean => {
+  return !(followEnabled && followAndScroll);
+};
+
+/**
+ * Decides whether an active-row transition should trigger an automatic reveal,
+ * and suppresses repeat reveals for an active index that has already been
+ * handled (visible or not). One instance per transcript view; `reset()` on
+ * view close/replace so a later view starts clean.
+ */
+export class TranscriptRevealGate {
+  private currentIndex: number | null = null;
+  private handledCurrentTransition = false;
+
+  /**
+   * `isFullyVisible` reflects the row's current on-screen state. Returns
+   * true (and should be scrolled into view) only the first time the
+   * *current* active-index transition is evaluated while it is not fully
+   * visible. Deduplication is scoped to this transition, not to the index
+   * value's whole history — a row that returns to active after playback
+   * has moved away from it (e.g. a backward seek) starts a fresh
+   * transition and is eligible to reveal again, even if that same index
+   * was already handled earlier.
+   */
+  shouldReveal(activeIndex: number | null, isFullyVisible: boolean): boolean {
+    if (activeIndex !== this.currentIndex) {
+      this.currentIndex = activeIndex;
+      this.handledCurrentTransition = false;
+    }
+    if (activeIndex === null || this.handledCurrentTransition) return false;
+
+    this.handledCurrentTransition = true;
+    return !isFullyVisible;
+  }
+
+  reset(): void {
+    this.currentIndex = null;
+    this.handledCurrentTransition = false;
+  }
+}

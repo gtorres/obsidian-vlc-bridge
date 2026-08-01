@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { findActiveTranscriptEntryIndex, ActiveTranscriptRowTracker, isValidPlaybackPosition } from "../src/transcriptPlayback.ts";
+import {
+  findActiveTranscriptEntryIndex,
+  ActiveTranscriptRowTracker,
+  isValidPlaybackPosition,
+  isRectFullyVisible,
+  isAutoRevealOwner,
+  TranscriptRevealGate,
+} from "../src/transcriptPlayback.ts";
 
 test("findActiveTranscriptEntryIndex: empty entries returns null", () => {
   assert.equal(findActiveTranscriptEntryIndex([], 1000), null);
@@ -263,4 +270,123 @@ test("ActiveTranscriptRowTracker: after invalidate(), a fresh request is accepte
   assert.equal(result.activeIndex, 1);
   assert.equal(result.changed, true);
   assert.equal(result.previousIndex, null);
+});
+
+// isRectFullyVisible — pure geometry check behind the transcript view's
+// "reveal only when needed" scroll logic (transcriptView.ts's revealActiveRow).
+
+test("isRectFullyVisible: row fully inside the container is visible", () => {
+  const container = { top: 0, bottom: 500 };
+  assert.equal(isRectFullyVisible({ top: 100, bottom: 150 }, container), true);
+});
+
+test("isRectFullyVisible: row partially above the viewport is not visible", () => {
+  const container = { top: 100, bottom: 500 };
+  assert.equal(isRectFullyVisible({ top: 50, bottom: 150 }, container), false);
+});
+
+test("isRectFullyVisible: row partially below the viewport is not visible", () => {
+  const container = { top: 0, bottom: 400 };
+  assert.equal(isRectFullyVisible({ top: 350, bottom: 450 }, container), false);
+});
+
+test("isRectFullyVisible: row completely outside the viewport is not visible", () => {
+  const container = { top: 0, bottom: 400 };
+  assert.equal(isRectFullyVisible({ top: 600, bottom: 650 }, container), false);
+});
+
+test("isRectFullyVisible: boundary equality (edges exactly touching) counts as visible", () => {
+  const container = { top: 100, bottom: 400 };
+  assert.equal(isRectFullyVisible({ top: 100, bottom: 400 }, container), true);
+});
+
+// TranscriptRevealGate — dedups automatic reveals so each active-index
+// transition triggers at most one scroll, and playback that stays on the
+// same row (or a row already handled) never re-triggers one.
+
+test("TranscriptRevealGate: fully visible active row causes no scroll", () => {
+  const gate = new TranscriptRevealGate();
+  assert.equal(gate.shouldReveal(0, true), false);
+});
+
+test("TranscriptRevealGate: not fully visible active row triggers a reveal", () => {
+  const gate = new TranscriptRevealGate();
+  assert.equal(gate.shouldReveal(0, false), true);
+});
+
+test("TranscriptRevealGate: unchanged active index causes no further reveal", () => {
+  const gate = new TranscriptRevealGate();
+  assert.equal(gate.shouldReveal(3, false), true);
+  // Same index queried again (e.g. next poll tick, row still/again not visible) — already handled.
+  assert.equal(gate.shouldReveal(3, false), false);
+  assert.equal(gate.shouldReveal(3, true), false);
+});
+
+test("TranscriptRevealGate: each active-index transition triggers at most one reveal", () => {
+  const gate = new TranscriptRevealGate();
+  let reveals = 0;
+  for (let i = 0; i < 5; i++) {
+    if (gate.shouldReveal(3, false)) reveals++;
+  }
+  assert.equal(reveals, 1);
+});
+
+test("TranscriptRevealGate: forward seek reveals the new row once", () => {
+  const gate = new TranscriptRevealGate();
+  gate.shouldReveal(1, true);
+  assert.equal(gate.shouldReveal(7, false), true);
+  assert.equal(gate.shouldReveal(7, false), false);
+});
+
+test("TranscriptRevealGate: backward seek reveals the new row once", () => {
+  const gate = new TranscriptRevealGate();
+  gate.shouldReveal(7, true);
+  assert.equal(gate.shouldReveal(1, false), true);
+  assert.equal(gate.shouldReveal(1, false), false);
+});
+
+test("TranscriptRevealGate: a null active index never triggers a reveal", () => {
+  const gate = new TranscriptRevealGate();
+  assert.equal(gate.shouldReveal(null, false), false);
+});
+
+test("TranscriptRevealGate: a row that was visible on one transition reveals on a later transition back to it (A visible -> B -> A not visible)", () => {
+  const gate = new TranscriptRevealGate();
+
+  // Row A becomes active while fully visible: no reveal needed.
+  assert.equal(gate.shouldReveal(0, true), false);
+
+  // Playback advances to row B: handled as its own transition.
+  assert.equal(gate.shouldReveal(1, true), false);
+
+  // Backward seek returns to row A, which the user has since scrolled out of view:
+  // this is a new transition back to A, so it must reveal exactly once.
+  assert.equal(gate.shouldReveal(0, false), true);
+
+  // Re-evaluating the same transition (no active-index change) must not reveal again.
+  assert.equal(gate.shouldReveal(0, false), false);
+});
+
+test("TranscriptRevealGate: reset() (view close/replace) allows a later transcript view to reveal normally", () => {
+  const gate = new TranscriptRevealGate();
+  gate.shouldReveal(2, false);
+  assert.equal(gate.shouldReveal(2, false), false);
+
+  gate.reset();
+  assert.equal(gate.shouldReveal(2, false), true);
+});
+
+// isAutoRevealOwner — ensures the automatic reveal path and the explicit
+// "Highlight and scroll" follow feature never both scroll for the same tick.
+
+test("isAutoRevealOwner: automatic reveal owns scrolling when follow is off", () => {
+  assert.equal(isAutoRevealOwner(false, false), true);
+});
+
+test("isAutoRevealOwner: automatic reveal owns scrolling when only-highlight follow is on", () => {
+  assert.equal(isAutoRevealOwner(true, false), true);
+});
+
+test("isAutoRevealOwner: automatic reveal stands down when 'Highlight and scroll' is active (no duplicate scroll)", () => {
+  assert.equal(isAutoRevealOwner(true, true), false);
 });
